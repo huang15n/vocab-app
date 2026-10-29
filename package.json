@@ -1,0 +1,13 @@
+{
+  "name": "vocabulaire-fr",
+  "version": "1.0.0",
+  "description": "Application de vocabulaire français - MERN stack",
+  "scripts": {
+    "install:all": "cd server && npm install && cd ../client && npm install",
+    "server": "cd server && npm run dev",
+    "client": "cd client && npm run dev",
+    "dev": "echo 'Lancez dans deux terminaux: npm run server  et  npm run client'"
+  },
+  "author": "",
+  "license": "MIT"
+}
