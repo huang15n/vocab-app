@@ -51,9 +51,12 @@ export const api = {
     request<StudySet>(`/sets/${id}/words`, { method: 'POST', body: JSON.stringify({ wordIds }) }),
 
   // Study
-  getCards: (setId: number) => request<Flashcard[]>(`/study/${setId}/cards`),
-  getQuiz: (setId: number, limit = 15) =>
-    request<{ questions: QuizQuestion[]; setName: string }>(`/study/${setId}/quiz?limit=${limit}`),
+  getCards: (setId: number, studyLang?: string) =>
+    request<Flashcard[]>(`/study/${setId}/cards${studyLang ? `?studyLang=${studyLang}` : ''}`),
+  getQuiz: (setId: number, limit = 15, studyLang?: string) =>
+    request<{ questions: QuizQuestion[]; setName: string; studyLang?: string; answerLang?: string }>(
+      `/study/${setId}/quiz?limit=${limit}${studyLang ? `&studyLang=${studyLang}` : ''}`
+    ),
   checkAnswer: (wordId: number, answer: string, type: 'mcq' | 'write') =>
     request<{ correct: boolean; correctAnswer: string; word: string; progress: Progress }>(
       '/study/quiz/check',

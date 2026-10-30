@@ -7,6 +7,8 @@ import {
   CONJUGATION_TENSES_PRIORITY,
   CONJUGATION_TENSES_LATER,
 } from '../types'
+import { useLang } from '../context/LanguageContext'
+import { wordText, wordExample } from '../context/LanguageContext'
 
 const statusLabels: Record<string, string> = {
   nouveau: 'Nouveau',
@@ -33,6 +35,7 @@ const genderLabels: Record<string, string> = {
 export default function WordDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { studyLang, primary, t } = useLang()
   const [word, setWord] = useState<Word | null>(null)
   const [loading, setLoading] = useState(true)
   const [openTenses, setOpenTenses] = useState<Record<string, boolean>>({})
@@ -73,7 +76,7 @@ export default function WordDetail() {
         </Link>
         <div className="flex-1">
           <div className="flex items-baseline gap-3 flex-wrap">
-            <h1 className="text-3xl font-bold text-slate-900">{word.word}</h1>
+            <h1 className="text-3xl font-bold text-slate-900">{primary(word) || word.fr || word.word}</h1>
             <span className="font-mono text-slate-400 text-lg">{word.ipa}</span>
           </div>
           <div className="flex gap-2 mt-1 flex-wrap">
@@ -102,22 +105,29 @@ export default function WordDetail() {
         </div>
       </div>
 
-      {/* Translations */}
+      {/* Three languages */}
       <div className="card p-5">
-        <h2 className="font-semibold text-slate-800 mb-3">Traductions</h2>
-        <div className="grid sm:grid-cols-2 gap-6">
-          <div>
-            <p className="text-xs text-slate-500 uppercase tracking-wide">Anglais</p>
-            <p className="text-slate-900 font-medium mt-0.5">{word.translations?.en || '—'}</p>
-            {word.translations?.enExample && (
-              <p className="text-sm text-slate-500 italic mt-1">« {word.translations.enExample} »</p>
+        <h2 className="font-semibold text-slate-800 mb-3">{t('translations')}</h2>
+        <div className="grid sm:grid-cols-3 gap-6">
+          <div className={studyLang === 'fr' ? 'ring-2 ring-violet-300 rounded-lg p-2 -m-2' : ''}>
+            <p className="text-xs text-slate-500 uppercase tracking-wide">Français</p>
+            <p className="text-slate-900 font-medium mt-0.5">{wordText(word, 'fr') || '—'}</p>
+            {wordExample(word, 'fr') && (
+              <p className="text-sm text-slate-500 italic mt-1">« {wordExample(word, 'fr')} »</p>
             )}
           </div>
-          <div>
-            <p className="text-xs text-slate-500 uppercase tracking-wide">Espagnol</p>
-            <p className="text-slate-900 font-medium mt-0.5">{word.translations?.es || '—'}</p>
-            {word.translations?.esExample && (
-              <p className="text-sm text-slate-500 italic mt-1">« {word.translations.esExample} »</p>
+          <div className={studyLang === 'en' ? 'ring-2 ring-violet-300 rounded-lg p-2 -m-2' : ''}>
+            <p className="text-xs text-slate-500 uppercase tracking-wide">English</p>
+            <p className="text-slate-900 font-medium mt-0.5">{wordText(word, 'en') || '—'}</p>
+            {wordExample(word, 'en') && (
+              <p className="text-sm text-slate-500 italic mt-1">« {wordExample(word, 'en')} »</p>
+            )}
+          </div>
+          <div className={studyLang === 'es' ? 'ring-2 ring-violet-300 rounded-lg p-2 -m-2' : ''}>
+            <p className="text-xs text-slate-500 uppercase tracking-wide">Español</p>
+            <p className="text-slate-900 font-medium mt-0.5">{wordText(word, 'es') || '—'}</p>
+            {wordExample(word, 'es') && (
+              <p className="text-sm text-slate-500 italic mt-1">« {wordExample(word, 'es')} »</p>
             )}
           </div>
         </div>

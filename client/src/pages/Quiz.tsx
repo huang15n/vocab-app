@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Check, X } from 'lucide-react'
 import { api } from '../api/words'
+import { useLang } from '../context/LanguageContext'
 import type { QuizQuestion } from '../types'
 
 export default function Quiz() {
   const { setId } = useParams()
+  const { studyLang, t } = useLang()
   const [questions, setQuestions] = useState<QuizQuestion[]>([])
   const [setName, setSetName] = useState('')
   const [idx, setIdx] = useState(0)
@@ -20,7 +22,7 @@ export default function Quiz() {
   useEffect(() => {
     if (!setId) return
     api
-      .getQuiz(Number(setId))
+      .getQuiz(Number(setId), 15, studyLang)
       .then((r) => {
         setQuestions(r.questions)
         setSetName(r.setName)
@@ -30,7 +32,7 @@ export default function Quiz() {
         console.error(e)
         setLoading(false)
       })
-  }, [setId])
+  }, [setId, studyLang])
 
   const q = questions[idx]
 

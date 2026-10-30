@@ -40,6 +40,33 @@ function saveDb() {
 
 let db = loadDb();
 
+/** Normalize legacy words to trilingual shape */
+function normalizeWord(w) {
+  if (!w) return w;
+  const fr = w.fr || w.word || '';
+  const en = w.en || w.translations?.en || '';
+  const es = w.es || w.translations?.es || '';
+  return {
+    ...w,
+    fr,
+    en,
+    es,
+    word: fr, // legacy alias
+    exampleFr: w.exampleFr || (Array.isArray(w.examples) && typeof w.examples[0] === 'string' ? w.examples[0] : w.examples?.[0]?.sentence) || '',
+    exampleEn: w.exampleEn || w.translations?.enExample || '',
+    exampleEs: w.exampleEs || w.translations?.esExample || '',
+  };
+}
+
+function wordInLang(w, lang) {
+  const n = normalizeWord(w);
+  if (lang === 'en') return n.en || n.fr;
+  if (lang === 'es') return n.es || n.fr;
+  return n.fr;
+}
+
+
+
 app.use(cors());
 app.use(morgan('dev'));
 app.use(express.json({ limit: '5mb' }));
@@ -128,8 +155,9 @@ app.get('/api/auth/me', auth, (req, res) => {
 
 // ---------- Words ----------
 app.get('/api/words', auth, (req, res) => {
-  let words = db.words.filter((w) => w.userId === req.user.id);
-  const { category, status, tag, search, level, setId } = req.query;
+  let words = db.words.filter((w) => w.userId === req.user.id).map(normalizeWord);
+  const { category, status, tag, search, level, setId, studyLang } = req.query;
+  const sortLang = studyLang === 'en' || studyLang === 'es' ? studyLang : 'fr';
 
   if (setId) {
     const set = db.sets.find((s) => s.id === Number(setId) && s.userId === req.user.id);
@@ -141,45 +169,55 @@ app.get('/api/words', auth, (req, res) => {
   if (level) words = words.filter((w) => w.cefrLevel === level);
   if (search) {
     const q = search.toLowerCase();
-    words = words.filter(
-      (w) =>
-        w.word.toLowerCase().includes(q) ||
-        (w.translations?.en || '').toLowerCase().includes(q) ||
-        (w.translations?.es || '').toLowerCase().includes(q)
-    );
+    words = words.filter((w) => {
+      const n = normalizeWord(w);
+      return (
+        (n.fr || '').toLowerCase().includes(q) ||
+        (n.en || '').toLowerCase().includes(q) ||
+        (n.es || '').toLowerCase().includes(q)
+      );
+    });
   }
-  words.sort((a, b) => a.word.localeCompare(b.word, 'fr'));
+  words.sort((a, b) => wordInLang(a, sortLang).localeCompare(wordInLang(b, sortLang), sortLang));
   res.json(words);
 });
 
 app.get('/api/words/:id', auth, (req, res) => {
   const word = db.words.find((w) => w.id === Number(req.params.id) && w.userId === req.user.id);
   if (!word) return res.status(404).json({ error: 'Mot non trouvé' });
-  res.json(word);
+  res.json(normalizeWord(word));
 });
 
 app.post('/api/words', auth, (req, res) => {
   const body = req.body;
-  if (!body.word || !body.category || !body.ipa) {
-    return res.status(400).json({ error: 'Mot, catégorie et IPA sont obligatoires' });
+  if (!(body.fr || body.word) || !body.category) {
+    return res.status(400).json({ error: 'Mot français et catégorie obligatoires' });
   }
+  const fr = (body.fr || body.word || '').trim();
+  if (!fr) return res.status(400).json({ error: 'Mot français requis' });
   const newWord = {
     id: db.nextWordId++,
     userId: req.user.id,
-    word: body.word.trim(),
+    fr,
+    en: (body.en || body.translations?.en || '').trim(),
+    es: (body.es || body.translations?.es || '').trim(),
+    word: fr,
     category: body.category,
-    ipa: body.ipa.trim(),
+    ipa: (body.ipa || '').trim() || `/${fr}/`,
     gender: body.category === 'nom' ? (body.gender || '') : undefined,
+    exampleFr: body.exampleFr || '',
+    exampleEn: body.exampleEn || body.translations?.enExample || '',
+    exampleEs: body.exampleEs || body.translations?.esExample || '',
     translations: {
-      en: body.translations?.en || '',
-      enExample: body.translations?.enExample || '',
-      es: body.translations?.es || '',
-      esExample: body.translations?.esExample || '',
+      en: (body.en || body.translations?.en || '').trim(),
+      enExample: body.exampleEn || body.translations?.enExample || '',
+      es: (body.es || body.translations?.es || '').trim(),
+      esExample: body.exampleEs || body.translations?.esExample || '',
     },
     definition: body.definition || '',
     examples: Array.isArray(body.examples)
       ? body.examples.map((e) => (typeof e === 'string' ? e : e?.sentence || '')).filter(Boolean)
-      : [],
+      : (body.exampleFr ? [body.exampleFr] : []),
     collocations: body.collocations || [],
     synonyms: body.synonyms || [],
     antonyms: body.antonyms || [],
@@ -206,20 +244,27 @@ app.put('/api/words/:id', auth, (req, res) => {
   if (Array.isArray(examples)) {
     examples = examples.map((e) => (typeof e === 'string' ? e : e?.sentence || '')).filter(Boolean);
   }
+  const fr = (body.fr ?? body.word ?? existing.fr ?? existing.word ?? '').trim();
+  const en = (body.en ?? body.translations?.en ?? existing.en ?? existing.translations?.en ?? '').trim();
+  const es = (body.es ?? body.translations?.es ?? existing.es ?? existing.translations?.es ?? '').trim();
+  const exampleFr = body.exampleFr ?? existing.exampleFr ?? '';
+  const exampleEn = body.exampleEn ?? body.translations?.enExample ?? existing.exampleEn ?? existing.translations?.enExample ?? '';
+  const exampleEs = body.exampleEs ?? body.translations?.esExample ?? existing.exampleEs ?? existing.translations?.esExample ?? '';
   const updated = {
     ...existing,
-    word: body.word?.trim() ?? existing.word,
+    fr,
+    en,
+    es,
+    word: fr,
     category: cat,
     ipa: body.ipa?.trim() ?? existing.ipa,
     gender: cat === 'nom' ? (body.gender ?? existing.gender ?? '') : undefined,
-    translations: {
-      en: body.translations?.en ?? existing.translations?.en ?? '',
-      enExample: body.translations?.enExample ?? existing.translations?.enExample ?? '',
-      es: body.translations?.es ?? existing.translations?.es ?? '',
-      esExample: body.translations?.esExample ?? existing.translations?.esExample ?? '',
-    },
+    exampleFr,
+    exampleEn,
+    exampleEs,
+    translations: { en, enExample: exampleEn, es, esExample: exampleEs },
     definition: body.definition ?? existing.definition,
-    examples,
+    examples: examples.length ? examples : (exampleFr ? [exampleFr] : []),
     collocations: body.collocations ?? existing.collocations,
     synonyms: body.synonyms ?? existing.synonyms,
     antonyms: body.antonyms ?? existing.antonyms,
@@ -232,7 +277,7 @@ app.put('/api/words/:id', auth, (req, res) => {
   };
   db.words[idx] = updated;
   saveDb();
-  res.json(updated);
+  res.json(normalizeWord(updated));
 });
 
 app.delete('/api/words/:id', auth, (req, res) => {
@@ -273,7 +318,7 @@ function normalizeRow(row) {
     }
     return '';
   };
-  const word = get('word', 'mot', 'terme', 'term');
+  const word = get('fr', 'word', 'mot', 'terme', 'term');
   if (!word) return null;
   const category = (get('category', 'catégorie', 'categorie', 'type') || 'nom').toLowerCase();
   const validCats = ['verbe', 'nom', 'adjectif', 'expression', 'adverbe', 'autre'];
@@ -284,16 +329,26 @@ function normalizeRow(row) {
   else if (genderRaw.startsWith('f')) gender = 'feminin';
   else if (genderRaw) gender = 'invariable';
   const frEx = get('example', 'exemple', 'examples', 'exemples');
+  const en = get('en', 'english', 'anglais', 'translation', 'traduction');
+  const es = get('es', 'spanish', 'espagnol');
+  const enExample = get('en_example', 'enexample', 'exemple_en', 'example_en');
+  const esExample = get('es_example', 'esexample', 'exemple_es', 'example_es');
   return {
     word,
+    fr: word,
+    en,
+    es,
     category: cat,
     ipa: get('ipa', 'pronunciation', 'prononciation') || `/${word}/`,
     gender: cat === 'nom' ? gender : undefined,
+    exampleFr: get('example', 'exemple', 'example_fr', 'exemple_fr'),
+    exampleEn: enExample,
+    exampleEs: esExample,
     translations: {
-      en: get('en', 'english', 'anglais', 'translation', 'traduction'),
-      enExample: get('en_example', 'enexample', 'exemple_en', 'example_en'),
-      es: get('es', 'spanish', 'espagnol'),
-      esExample: get('es_example', 'esexample', 'exemple_es', 'example_es'),
+      en,
+      enExample,
+      es,
+      esExample,
     },
     definition: get('definition', 'définition', 'def'),
     examples: frEx ? frEx.split(/[;|]/).map((s) => s.trim()).filter(Boolean) : [],
@@ -489,16 +544,28 @@ app.post('/api/progress/review', auth, (req, res) => {
 app.get('/api/study/:setId/cards', auth, (req, res) => {
   const set = db.sets.find((s) => s.id === Number(req.params.setId) && s.userId === req.user.id);
   if (!set) return res.status(404).json({ error: 'Ensemble non trouvé' });
-  const words = db.words.filter((w) => set.wordIds.includes(w.id) && w.userId === req.user.id);
-  const cards = words.map((w) => ({
-    id: w.id,
-    front: w.word,
-    back: w.translations?.en || w.definition || '',
-    ipa: w.ipa,
-    category: w.category,
-    example: (Array.isArray(w.examples) ? (typeof w.examples[0] === 'string' ? w.examples[0] : w.examples[0]?.sentence) : '') || '',
-    progress: getProgress(req.user.id, w.id),
-  }));
+  const studyLang = req.query.studyLang === 'en' || req.query.studyLang === 'es' ? req.query.studyLang : 'fr';
+  const others = ['fr', 'en', 'es'].filter((l) => l !== studyLang);
+  const words = db.words.filter((w) => set.wordIds.includes(w.id) && w.userId === req.user.id).map(normalizeWord);
+  const cards = words.map((w) => {
+    const front = wordInLang(w, studyLang);
+    const back = wordInLang(w, others[0]);
+    const back2 = wordInLang(w, others[1]);
+    let example = '';
+    if (studyLang === 'fr') example = w.exampleFr || (typeof w.examples?.[0] === 'string' ? w.examples[0] : '') || '';
+    else if (studyLang === 'en') example = w.exampleEn || '';
+    else example = w.exampleEs || '';
+    return {
+      id: w.id,
+      front,
+      back,
+      back2,
+      ipa: w.ipa,
+      category: w.category,
+      example,
+      progress: getProgress(req.user.id, w.id),
+    };
+  });
   saveDb();
   res.json(cards);
 });
@@ -515,24 +582,28 @@ app.get('/api/study/:setId/quiz', auth, (req, res) => {
   const limit = Math.min(words.length, Number(req.query.limit) || 20);
   words = words.slice(0, limit);
 
+  const studyLang = req.query.studyLang === 'en' || req.query.studyLang === 'es' ? req.query.studyLang : 'fr';
+  const answerLang = studyLang === 'fr' ? 'en' : 'fr';
+  words = words.map(normalizeWord);
   const questions = words.map((w) => {
-    const others = words
+    const prompt = wordInLang(w, studyLang);
+    const correct = wordInLang(w, answerLang);
+    const distractors = words
       .filter((o) => o.id !== w.id)
       .sort(() => Math.random() - 0.5)
       .slice(0, 3)
-      .map((o) => o.translations?.en || o.word);
-    const correct = w.translations?.en || w.definition || w.word;
-    const options = [...others, correct].sort(() => Math.random() - 0.5);
+      .map((o) => wordInLang(o, answerLang));
+    const options = [...distractors, correct].sort(() => Math.random() - 0.5);
     return {
       wordId: w.id,
-      prompt: w.word,
+      prompt,
       ipa: w.ipa,
       type: 'mcq',
       options,
-      // correct answer not sent — client submits and we validate
+      answerLang,
     };
   });
-  res.json({ questions, setName: set.name });
+  res.json({ questions, setName: set.name, studyLang, answerLang });
 });
 
 app.post('/api/study/quiz/check', auth, (req, res) => {
@@ -540,11 +611,12 @@ app.post('/api/study/quiz/check', auth, (req, res) => {
   const word = db.words.find((w) => w.id === Number(wordId) && w.userId === req.user.id);
   if (!word) return res.status(404).json({ error: 'Mot non trouvé' });
 
+  const n = normalizeWord(word);
   const correctAnswers = [
-    (word.translations?.en || '').toLowerCase().trim(),
-    (word.translations?.es || '').toLowerCase().trim(),
-    (word.definition || '').toLowerCase().trim(),
-    word.word.toLowerCase().trim(),
+    (n.fr || '').toLowerCase().trim(),
+    (n.en || '').toLowerCase().trim(),
+    (n.es || '').toLowerCase().trim(),
+    (n.definition || '').toLowerCase().trim(),
   ].filter(Boolean);
 
   const userAns = String(answer || '')
@@ -586,7 +658,7 @@ app.post('/api/study/quiz/check', auth, (req, res) => {
 
   res.json({
     correct,
-    correctAnswer: word.translations?.en || word.definition,
+    correctAnswer: (() => { const n = normalizeWord(word); return n.en || n.fr || n.es; })(),
     word: word.word,
     progress: p,
   });

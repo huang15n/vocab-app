@@ -25,11 +25,15 @@ const emptyPerson = (): PersonForms => ({
 })
 
 const emptyForm: WordFormData = {
-  word: '',
+  fr: '',
+  en: '',
+  es: '',
   category: 'nom',
   ipa: '',
   gender: '',
-  translations: { en: '', enExample: '', es: '', esExample: '' },
+  exampleFr: '',
+  exampleEn: '',
+  exampleEs: '',
   definition: '',
   examples: [],
   collocations: [],
@@ -78,16 +82,15 @@ export default function WordForm() {
           typeof e === 'string' ? e : e?.sentence || ''
         )
         setForm({
-          word: w.word,
+          fr: w.fr || w.word || '',
+          en: w.en || w.translations?.en || '',
+          es: w.es || w.translations?.es || '',
           category: w.category,
           ipa: w.ipa,
           gender: w.gender || '',
-          translations: {
-            en: w.translations?.en || '',
-            enExample: w.translations?.enExample || '',
-            es: w.translations?.es || '',
-            esExample: w.translations?.esExample || '',
-          },
+          exampleFr: w.exampleFr || (examples[0] || ''),
+          exampleEn: w.exampleEn || w.translations?.enExample || '',
+          exampleEs: w.exampleEs || w.translations?.esExample || '',
           definition: w.definition || '',
           examples,
           collocations: w.collocations || [],
@@ -183,8 +186,8 @@ export default function WordForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    if (!form.word.trim() || !form.ipa.trim() || !form.translations.en.trim()) {
-      setError('Mot, IPA et mot anglais sont obligatoires.')
+    if (!form.fr.trim() || !form.en.trim()) {
+      setError('Mot français et anglais obligatoires.')
       return
     }
     setSaving(true)
@@ -284,23 +287,22 @@ export default function WordForm() {
           <h2 className="font-semibold text-slate-800">Informations de base</h2>
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
-              <label className="label">Mot *</label>
+              <label className="label">Mot français *</label>
               <input
                 className="input"
-                value={form.word}
-                onChange={(e) => updateField('word', e.target.value)}
+                value={form.fr}
+                onChange={(e) => updateField('fr', e.target.value)}
                 placeholder="ex. poser"
                 required
               />
             </div>
             <div>
-              <label className="label">IPA *</label>
+              <label className="label">IPA</label>
               <input
                 className="input font-mono"
                 value={form.ipa}
                 onChange={(e) => updateField('ipa', e.target.value)}
                 placeholder="/po.ze/"
-                required
               />
             </div>
           </div>
@@ -370,16 +372,16 @@ export default function WordForm() {
           </div>
         </div>
 
-        {/* Translations EN / ES with examples */}
+        {/* Three languages */}
         <div className="card p-5 space-y-4">
-          <h2 className="font-semibold text-slate-800">Traductions</h2>
+          <h2 className="font-semibold text-slate-800">Les 3 langues</h2>
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
               <label className="label">Mot anglais *</label>
               <input
                 className="input"
-                value={form.translations.en}
-                onChange={(e) => updateTranslation('en', e.target.value)}
+                value={form.en}
+                onChange={(e) => updateField('en', e.target.value)}
                 placeholder="to ask; to put"
                 required
               />
@@ -388,8 +390,8 @@ export default function WordForm() {
               <label className="label">Exemple anglais</label>
               <input
                 className="input"
-                value={form.translations.enExample || ''}
-                onChange={(e) => updateTranslation('enExample', e.target.value)}
+                value={form.exampleEn || ''}
+                onChange={(e) => updateField('exampleEn', e.target.value)}
                 placeholder="I would like to ask a question."
               />
             </div>
@@ -397,8 +399,8 @@ export default function WordForm() {
               <label className="label">Mot espagnol</label>
               <input
                 className="input"
-                value={form.translations.es}
-                onChange={(e) => updateTranslation('es', e.target.value)}
+                value={form.es}
+                onChange={(e) => updateField('es', e.target.value)}
                 placeholder="hacer una pregunta; poner"
               />
             </div>
@@ -406,9 +408,18 @@ export default function WordForm() {
               <label className="label">Exemple espagnol</label>
               <input
                 className="input"
-                value={form.translations.esExample || ''}
-                onChange={(e) => updateTranslation('esExample', e.target.value)}
+                value={form.exampleEs || ''}
+                onChange={(e) => updateField('exampleEs', e.target.value)}
                 placeholder="Me gustaría hacer una pregunta."
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="label">Exemple français</label>
+              <input
+                className="input"
+                value={form.exampleFr || ''}
+                onChange={(e) => updateField('exampleFr', e.target.value)}
+                placeholder="Je voudrais poser une question."
               />
             </div>
           </div>
