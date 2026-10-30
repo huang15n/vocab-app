@@ -156,8 +156,8 @@ app.get('/api/auth/me', auth, (req, res) => {
 // ---------- Words ----------
 app.get('/api/words', auth, (req, res) => {
   let words = db.words.filter((w) => w.userId === req.user.id).map(normalizeWord);
-  const { category, status, tag, search, level, setId, studyLang } = req.query;
-  const sortLang = studyLang === 'en' || studyLang === 'es' ? studyLang : 'fr';
+  const { category, status, tag, search, level, setId, studyLang, lang } = req.query;
+  const sortLang = (studyLang || lang) === 'en' || (studyLang || lang) === 'es' ? (studyLang || lang) : 'fr';
 
   if (setId) {
     const set = db.sets.find((s) => s.id === Number(setId) && s.userId === req.user.id);
@@ -544,7 +544,7 @@ app.post('/api/progress/review', auth, (req, res) => {
 app.get('/api/study/:setId/cards', auth, (req, res) => {
   const set = db.sets.find((s) => s.id === Number(req.params.setId) && s.userId === req.user.id);
   if (!set) return res.status(404).json({ error: 'Ensemble non trouvé' });
-  const studyLang = req.query.studyLang === 'en' || req.query.studyLang === 'es' ? req.query.studyLang : 'fr';
+  const studyLang = (req.query.studyLang || req.query.lang) === 'en' || (req.query.studyLang || req.query.lang) === 'es' ? (req.query.studyLang || req.query.lang) : 'fr';
   const others = ['fr', 'en', 'es'].filter((l) => l !== studyLang);
   const words = db.words.filter((w) => set.wordIds.includes(w.id) && w.userId === req.user.id).map(normalizeWord);
   const cards = words.map((w) => {
@@ -582,7 +582,7 @@ app.get('/api/study/:setId/quiz', auth, (req, res) => {
   const limit = Math.min(words.length, Number(req.query.limit) || 20);
   words = words.slice(0, limit);
 
-  const studyLang = req.query.studyLang === 'en' || req.query.studyLang === 'es' ? req.query.studyLang : 'fr';
+  const studyLang = (req.query.studyLang || req.query.lang) === 'en' || (req.query.studyLang || req.query.lang) === 'es' ? (req.query.studyLang || req.query.lang) : 'fr';
   const answerLang = studyLang === 'fr' ? 'en' : 'fr';
   words = words.map(normalizeWord);
   const questions = words.map((w) => {

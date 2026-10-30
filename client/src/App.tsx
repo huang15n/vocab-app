@@ -33,38 +33,23 @@ function Protected({ children }: { children: React.ReactNode }) {
 }
 
 function LangSwitch() {
-  const { uiLang, studyLang, setUiLang, setStudyLang, t } = useLang()
+  const { lang, setLang } = useLang()
   const langs: Lang[] = ['fr', 'en', 'es']
   return (
-    <div className="flex items-center gap-2 text-xs">
-      <div className="hidden lg:flex items-center gap-1" title={t('uiLanguage')}>
-        <span className="text-slate-400">UI</span>
-        {langs.map((l) => (
-          <button
-            key={l}
-            onClick={() => setUiLang(l)}
-            className={`px-1.5 py-0.5 rounded font-medium uppercase ${
-              uiLang === l ? 'bg-primary-100 text-primary-800' : 'text-slate-500 hover:bg-slate-100'
-            }`}
-          >
-            {l}
-          </button>
-        ))}
-      </div>
-      <div className="flex items-center gap-1" title={t('studyLanguageHint')}>
-        <span className="text-slate-400 hidden sm:inline">{t('studyLanguage')}</span>
-        {langs.map((l) => (
-          <button
-            key={l}
-            onClick={() => setStudyLang(l)}
-            className={`px-1.5 py-0.5 rounded font-medium uppercase ${
-              studyLang === l ? 'bg-violet-100 text-violet-800' : 'text-slate-500 hover:bg-slate-100'
-            }`}
-          >
-            {l}
-          </button>
-        ))}
-      </div>
+    <div className="flex items-center gap-0.5 text-xs border border-slate-200 rounded-lg p-0.5">
+      {langs.map((l) => (
+        <button
+          key={l}
+          onClick={() => setLang(l)}
+          className={`px-2.5 py-1 rounded-md font-semibold uppercase transition-colors ${
+            lang === l
+              ? 'bg-primary-600 text-white shadow-sm'
+              : 'text-slate-500 hover:bg-slate-100'
+          }`}
+        >
+          {l}
+        </button>
+      ))}
     </div>
   )
 }

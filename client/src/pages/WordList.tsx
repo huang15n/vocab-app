@@ -13,7 +13,7 @@ const statusColors: Record<LearningStatus, string> = {
 }
 
 export default function WordList() {
-  const { t, studyLang, primary, secondary } = useLang()
+  const { t, lang, primary, secondary } = useLang()
   const [words, setWords] = useState<Word[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -40,7 +40,7 @@ export default function WordList() {
 
   const load = () => {
     setLoading(true)
-    const params: Record<string, string> = { studyLang }
+    const params: Record<string, string> = { studyLang: lang }
     if (search) params.search = search
     if (category) params.category = category
     if (status) params.status = status
@@ -54,7 +54,7 @@ export default function WordList() {
   useEffect(() => {
     const timer = setTimeout(load, 200)
     return () => clearTimeout(timer)
-  }, [search, category, status, studyLang])
+  }, [search, category, status, lang])
 
   const toggle = (id: number) => {
     setSelected((prev) => {
@@ -91,7 +91,7 @@ export default function WordList() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">{t('words')}</h1>
           <p className="text-xs text-violet-600 mt-0.5 uppercase font-medium">
-            {studyLang === 'fr' ? 'Français' : studyLang === 'en' ? 'English' : 'Español'}
+            {lang === 'fr' ? 'Français' : lang === 'en' ? 'English' : 'Español'}
           </p>
         </div>
         <div className="flex gap-2">

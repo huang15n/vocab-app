@@ -7,7 +7,7 @@ import type { QuizQuestion } from '../types'
 
 export default function Quiz() {
   const { setId } = useParams()
-  const { studyLang, t } = useLang()
+  const { lang, t } = useLang()
   const [questions, setQuestions] = useState<QuizQuestion[]>([])
   const [setName, setSetName] = useState('')
   const [idx, setIdx] = useState(0)
@@ -22,7 +22,7 @@ export default function Quiz() {
   useEffect(() => {
     if (!setId) return
     api
-      .getQuiz(Number(setId), 15, studyLang)
+      .getQuiz(Number(setId), 15, lang)
       .then((r) => {
         setQuestions(r.questions)
         setSetName(r.setName)
@@ -32,7 +32,7 @@ export default function Quiz() {
         console.error(e)
         setLoading(false)
       })
-  }, [setId, studyLang])
+  }, [setId, lang])
 
   const q = questions[idx]
 

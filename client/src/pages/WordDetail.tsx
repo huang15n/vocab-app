@@ -35,7 +35,7 @@ const genderLabels: Record<string, string> = {
 export default function WordDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { studyLang, primary, t } = useLang()
+  const { lang, primary, t } = useLang()
   const [word, setWord] = useState<Word | null>(null)
   const [loading, setLoading] = useState(true)
   const [openTenses, setOpenTenses] = useState<Record<string, boolean>>({})
@@ -109,21 +109,21 @@ export default function WordDetail() {
       <div className="card p-5">
         <h2 className="font-semibold text-slate-800 mb-3">{t('translations')}</h2>
         <div className="grid sm:grid-cols-3 gap-6">
-          <div className={studyLang === 'fr' ? 'ring-2 ring-violet-300 rounded-lg p-2 -m-2' : ''}>
+          <div className={lang === 'fr' ? 'ring-2 ring-violet-300 rounded-lg p-2 -m-2' : ''}>
             <p className="text-xs text-slate-500 uppercase tracking-wide">Français</p>
             <p className="text-slate-900 font-medium mt-0.5">{wordText(word, 'fr') || '—'}</p>
             {wordExample(word, 'fr') && (
               <p className="text-sm text-slate-500 italic mt-1">« {wordExample(word, 'fr')} »</p>
             )}
           </div>
-          <div className={studyLang === 'en' ? 'ring-2 ring-violet-300 rounded-lg p-2 -m-2' : ''}>
+          <div className={lang === 'en' ? 'ring-2 ring-violet-300 rounded-lg p-2 -m-2' : ''}>
             <p className="text-xs text-slate-500 uppercase tracking-wide">English</p>
             <p className="text-slate-900 font-medium mt-0.5">{wordText(word, 'en') || '—'}</p>
             {wordExample(word, 'en') && (
               <p className="text-sm text-slate-500 italic mt-1">« {wordExample(word, 'en')} »</p>
             )}
           </div>
-          <div className={studyLang === 'es' ? 'ring-2 ring-violet-300 rounded-lg p-2 -m-2' : ''}>
+          <div className={lang === 'es' ? 'ring-2 ring-violet-300 rounded-lg p-2 -m-2' : ''}>
             <p className="text-xs text-slate-500 uppercase tracking-wide">Español</p>
             <p className="text-slate-900 font-medium mt-0.5">{wordText(word, 'es') || '—'}</p>
             {wordExample(word, 'es') && (

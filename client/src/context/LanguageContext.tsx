@@ -3,30 +3,29 @@ import { translate, type Lang, type TranslationKey, LANG_LABELS } from '../i18n/
 import type { Word } from '../types'
 
 interface LangCtx {
-  uiLang: Lang
-  studyLang: Lang
-  setUiLang: (l: Lang) => void
-  setStudyLang: (l: Lang) => void
+  lang: Lang
+  setLang: (l: Lang) => void
   t: (key: TranslationKey) => string
-  /** Mot principal selon la langue d'étude */
+  /** Mot principal selon la langue active */
   primary: (w: Word) => string
-  /** Traductions (les deux autres langues) */
+  /** Les deux autres langues */
   secondary: (w: Word) => { lang: Lang; text: string }[]
-  /** Exemple selon langue d'étude */
   primaryExample: (w: Word) => string
 }
 
 const LanguageContext = createContext<LangCtx | null>(null)
 
-function getStored(key: string, fallback: Lang): Lang {
+function getStored(): Lang {
   try {
-    const v = localStorage.getItem(key) as Lang | null
+    const v = localStorage.getItem('vocab_lang') as Lang | null
     if (v === 'fr' || v === 'en' || v === 'es') return v
+    // migrate old keys
+    const old = localStorage.getItem('vocab_ui_lang') as Lang | null
+    if (old === 'fr' || old === 'en' || old === 'es') return old
   } catch {}
-  return fallback
+  return 'fr'
 }
 
-/** Normalize legacy word shape → fr/en/es */
 export function wordText(w: Word, lang: Lang): string {
   if (lang === 'fr') return w.fr || w.word || ''
   if (lang === 'en') return w.en || w.translations?.en || ''
@@ -36,12 +35,13 @@ export function wordText(w: Word, lang: Lang): string {
 
 export function wordExample(w: Word, lang: Lang): string {
   if (lang === 'fr') {
+    if (w.exampleFr) return w.exampleFr
     const ex = w.examples
     if (Array.isArray(ex) && ex.length) {
       const first = ex[0]
       return typeof first === 'string' ? first : (first as any)?.sentence || ''
     }
-    return w.exampleFr || ''
+    return ''
   }
   if (lang === 'en') return w.exampleEn || w.translations?.enExample || ''
   if (lang === 'es') return w.exampleEs || w.translations?.esExample || ''
@@ -49,41 +49,33 @@ export function wordExample(w: Word, lang: Lang): string {
 }
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
-  const [uiLang, setUiLangState] = useState<Lang>(() => getStored('vocab_ui_lang', 'fr'))
-  const [studyLang, setStudyLangState] = useState<Lang>(() => getStored('vocab_study_lang', 'fr'))
+  const [lang, setLangState] = useState<Lang>(getStored)
 
-  const setUiLang = (l: Lang) => {
-    setUiLangState(l)
-    localStorage.setItem('vocab_ui_lang', l)
+  const setLang = (l: Lang) => {
+    setLangState(l)
+    localStorage.setItem('vocab_lang', l)
     document.documentElement.lang = l
   }
 
-  const setStudyLang = (l: Lang) => {
-    setStudyLangState(l)
-    localStorage.setItem('vocab_study_lang', l)
-  }
-
   useEffect(() => {
-    document.documentElement.lang = uiLang
-  }, [uiLang])
+    document.documentElement.lang = lang
+  }, [lang])
 
-  const t = (key: TranslationKey) => translate(uiLang, key)
+  const t = (key: TranslationKey) => translate(lang, key)
 
-  const primary = (w: Word) => wordText(w, studyLang)
+  const primary = (w: Word) => wordText(w, lang)
 
   const secondary = (w: Word) => {
-    const others: Lang[] = (['fr', 'en', 'es'] as Lang[]).filter((l) => l !== studyLang)
+    const others: Lang[] = (['fr', 'en', 'es'] as Lang[]).filter((l) => l !== lang)
     return others
-      .map((lang) => ({ lang, text: wordText(w, lang) }))
+      .map((l) => ({ lang: l, text: wordText(w, l) }))
       .filter((x) => x.text)
   }
 
-  const primaryExample = (w: Word) => wordExample(w, studyLang)
+  const primaryExample = (w: Word) => wordExample(w, lang)
 
   return (
-    <LanguageContext.Provider
-      value={{ uiLang, studyLang, setUiLang, setStudyLang, t, primary, secondary, primaryExample }}
-    >
+    <LanguageContext.Provider value={{ lang, setLang, t, primary, secondary, primaryExample }}>
       {children}
     </LanguageContext.Provider>
   )

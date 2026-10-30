@@ -7,7 +7,7 @@ import type { Flashcard } from '../types'
 
 export default function Flashcards() {
   const { setId } = useParams()
-  const { studyLang, t } = useLang()
+  const { lang, t } = useLang()
   const [cards, setCards] = useState<Flashcard[]>([])
   const [idx, setIdx] = useState(0)
   const [flipped, setFlipped] = useState(false)
@@ -18,13 +18,13 @@ export default function Flashcards() {
   useEffect(() => {
     if (!setId) return
     api
-      .getCards(Number(setId), studyLang)
+      .getCards(Number(setId), lang)
       .then((c) => {
         setCards([...c].sort(() => Math.random() - 0.5))
         setLoading(false)
       })
       .catch(console.error)
-  }, [setId, studyLang])
+  }, [setId, lang])
 
   const card = cards[idx]
 
