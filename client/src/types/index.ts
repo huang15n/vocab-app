@@ -13,7 +13,6 @@ export interface PersonForms {
   nous?: string;
   vous?: string;
   'ils/elles'?: string;
-  // subjonctif
   que_je?: string;
   que_tu?: string;
   'qu_il/elle/on'?: string;
@@ -38,6 +37,7 @@ export interface Conjugations {
 
 export interface Word {
   id: number;
+  userId?: number;
   word: string;
   category: Category;
   ipa: string;
@@ -64,11 +64,7 @@ export interface WordFormData {
   word: string;
   category: Category;
   ipa: string;
-  translations: {
-    en: string;
-    es: string;
-    fr?: string;
-  };
+  translations: { en: string; es: string; fr?: string };
   definition?: string;
   examples: Example[];
   collocations: string[];
@@ -81,8 +77,61 @@ export interface WordFormData {
   notes?: string;
 }
 
+export interface User {
+  id: number;
+  email: string;
+  name: string;
+}
+
+export interface StudySet {
+  id: number;
+  userId: number;
+  name: string;
+  description: string;
+  wordIds: number[];
+  wordCount?: number;
+  words?: Word[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Progress {
+  userId: number;
+  wordId: number;
+  ease: number;
+  interval: number;
+  repetitions: number;
+  nextReview: string;
+  correctCount: number;
+  incorrectCount: number;
+  lastReviewed: string | null;
+  status: 'nouveau' | 'learning' | 'review' | 'mastered';
+}
+
 export interface Stats {
   total: number;
   byCategory: Record<string, number>;
   byStatus: Record<string, number>;
+  setsCount: number;
+  dueCount: number;
+  mastered: number;
+  totalReviews: number;
+}
+
+export interface Flashcard {
+  id: number;
+  front: string;
+  back: string;
+  ipa: string;
+  category: string;
+  example: string;
+  progress: Progress;
+}
+
+export interface QuizQuestion {
+  wordId: number;
+  prompt: string;
+  ipa: string;
+  type: 'mcq' | 'write';
+  options?: string[];
 }

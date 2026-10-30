@@ -3,129 +3,200 @@ const cors = require('cors');
 const morgan = require('morgan');
 const path = require('path');
 const fs = require('fs');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const multer = require('multer');
+const { parse } = require('csv-parse/sync');
+const XLSX = require('xlsx');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
-const DATA_FILE = path.join(__dirname, '..', 'data', 'words.json');
+const JWT_SECRET = process.env.JWT_SECRET || 'vocab-fr-secret-change-me-in-production';
+const DATA_FILE = path.join(__dirname, '..', 'data', 'db.json');
 
-// Ensure data directory exists
 const dataDir = path.dirname(DATA_FILE);
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
+if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 
-// Load or initialize data
-function loadData() {
+function loadDb() {
   try {
-    if (fs.existsSync(DATA_FILE)) {
-      return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-    }
+    if (fs.existsSync(DATA_FILE)) return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
   } catch (e) {
-    console.error('Error loading data:', e.message);
+    console.error('DB load error:', e.message);
   }
-  return { words: [], nextId: 1 };
+  return {
+    users: [],
+    words: [],
+    sets: [],
+    progress: [],
+    nextUserId: 1,
+    nextWordId: 1,
+    nextSetId: 1,
+  };
 }
 
-function saveData(data) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
+function saveDb() {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2), 'utf8');
 }
 
-let db = loadData();
+let db = loadDb();
 
 app.use(cors());
 app.use(morgan('dev'));
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '5mb' }));
 
-// ========== ROUTES ==========
-
-// Health
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', wordsCount: db.words.length });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
 });
 
-// Get all words (with optional filters)
-app.get('/api/words', (req, res) => {
-  let words = [...db.words];
-  const { category, status, tag, search, level } = req.query;
+// ---------- Auth middleware ----------
+function auth(req, res, next) {
+  const header = req.headers.authorization;
+  if (!header?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Non authentifié' });
+  }
+  try {
+    const payload = jwt.verify(header.slice(7), JWT_SECRET);
+    const user = db.users.find((u) => u.id === payload.userId);
+    if (!user) return res.status(401).json({ error: 'Utilisateur introuvable' });
+    req.user = { id: user.id, email: user.email, name: user.name };
+    next();
+  } catch {
+    return res.status(401).json({ error: 'Token invalide' });
+  }
+}
 
-  if (category) {
-    words = words.filter(w => w.category === category);
+function optionalAuth(req, res, next) {
+  const header = req.headers.authorization;
+  if (header?.startsWith('Bearer ')) {
+    try {
+      const payload = jwt.verify(header.slice(7), JWT_SECRET);
+      const user = db.users.find((u) => u.id === payload.userId);
+      if (user) req.user = { id: user.id, email: user.email, name: user.name };
+    } catch {}
   }
-  if (status) {
-    words = words.filter(w => w.learningStatus === status);
+  next();
+}
+
+// ---------- Auth routes ----------
+app.post('/api/auth/register', async (req, res) => {
+  const { email, password, name } = req.body;
+  if (!email?.trim() || !password || password.length < 6) {
+    return res.status(400).json({ error: 'Email et mot de passe (min. 6 caractères) requis' });
   }
-  if (tag) {
-    words = words.filter(w => w.tags && w.tags.includes(tag));
+  const exists = db.users.find((u) => u.email.toLowerCase() === email.toLowerCase().trim());
+  if (exists) return res.status(400).json({ error: 'Cet email est déjà utilisé' });
+
+  const hash = await bcrypt.hash(password, 10);
+  const user = {
+    id: db.nextUserId++,
+    email: email.toLowerCase().trim(),
+    passwordHash: hash,
+    name: (name || email.split('@')[0]).trim(),
+    createdAt: new Date().toISOString(),
+  };
+  db.users.push(user);
+  saveDb();
+
+  const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '30d' });
+  res.status(201).json({
+    token,
+    user: { id: user.id, email: user.email, name: user.name },
+  });
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ error: 'Email et mot de passe requis' });
+
+  const user = db.users.find((u) => u.email === email.toLowerCase().trim());
+  if (!user) return res.status(401).json({ error: 'Identifiants incorrects' });
+
+  const ok = await bcrypt.compare(password, user.passwordHash);
+  if (!ok) return res.status(401).json({ error: 'Identifiants incorrects' });
+
+  const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '30d' });
+  res.json({
+    token,
+    user: { id: user.id, email: user.email, name: user.name },
+  });
+});
+
+app.get('/api/auth/me', auth, (req, res) => {
+  res.json({ user: req.user });
+});
+
+// ---------- Words ----------
+app.get('/api/words', auth, (req, res) => {
+  let words = db.words.filter((w) => w.userId === req.user.id);
+  const { category, status, tag, search, level, setId } = req.query;
+
+  if (setId) {
+    const set = db.sets.find((s) => s.id === Number(setId) && s.userId === req.user.id);
+    if (set) words = words.filter((w) => set.wordIds.includes(w.id));
   }
-  if (level) {
-    words = words.filter(w => w.cefrLevel === level);
-  }
+  if (category) words = words.filter((w) => w.category === category);
+  if (status) words = words.filter((w) => w.learningStatus === status);
+  if (tag) words = words.filter((w) => w.tags?.includes(tag));
+  if (level) words = words.filter((w) => w.cefrLevel === level);
   if (search) {
     const q = search.toLowerCase();
-    words = words.filter(w =>
-      w.word.toLowerCase().includes(q) ||
-      (w.translations?.en || '').toLowerCase().includes(q) ||
-      (w.translations?.es || '').toLowerCase().includes(q) ||
-      (w.translations?.fr || '').toLowerCase().includes(q)
+    words = words.filter(
+      (w) =>
+        w.word.toLowerCase().includes(q) ||
+        (w.translations?.en || '').toLowerCase().includes(q) ||
+        (w.translations?.es || '').toLowerCase().includes(q)
     );
   }
-
-  // Sort by word
   words.sort((a, b) => a.word.localeCompare(b.word, 'fr'));
   res.json(words);
 });
 
-// Get single word
-app.get('/api/words/:id', (req, res) => {
-  const word = db.words.find(w => w.id === Number(req.params.id));
+app.get('/api/words/:id', auth, (req, res) => {
+  const word = db.words.find((w) => w.id === Number(req.params.id) && w.userId === req.user.id);
   if (!word) return res.status(404).json({ error: 'Mot non trouvé' });
   res.json(word);
 });
 
-// Create word
-app.post('/api/words', (req, res) => {
+app.post('/api/words', auth, (req, res) => {
   const body = req.body;
   if (!body.word || !body.category || !body.ipa) {
     return res.status(400).json({ error: 'Mot, catégorie et IPA sont obligatoires' });
   }
-
   const newWord = {
-    id: db.nextId++,
+    id: db.nextWordId++,
+    userId: req.user.id,
     word: body.word.trim(),
-    category: body.category, // verbe | nom | adjectif | expression | adverbe | autre
+    category: body.category,
     ipa: body.ipa.trim(),
     translations: {
       en: body.translations?.en || '',
       es: body.translations?.es || '',
-      fr: body.translations?.fr || ''
+      fr: body.translations?.fr || '',
     },
     definition: body.definition || '',
-    examples: body.examples || [], // [{ sentence, translation }]
+    examples: body.examples || [],
     collocations: body.collocations || [],
     synonyms: body.synonyms || [],
     antonyms: body.antonyms || [],
     tags: body.tags || [],
     cefrLevel: body.cefrLevel || '',
-    learningStatus: body.learningStatus || 'nouveau', // nouveau | en_cours | appris | a_reviser
-    conjugations: body.category === 'verbe' ? (body.conjugations || null) : null,
+    learningStatus: body.learningStatus || 'nouveau',
+    conjugations: body.category === 'verbe' ? body.conjugations || null : null,
     notes: body.notes || '',
     createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
   };
-
   db.words.push(newWord);
-  saveData(db);
+  saveDb();
   res.status(201).json(newWord);
 });
 
-// Update word
-app.put('/api/words/:id', (req, res) => {
-  const idx = db.words.findIndex(w => w.id === Number(req.params.id));
+app.put('/api/words/:id', auth, (req, res) => {
+  const idx = db.words.findIndex((w) => w.id === Number(req.params.id) && w.userId === req.user.id);
   if (idx === -1) return res.status(404).json({ error: 'Mot non trouvé' });
-
   const body = req.body;
   const existing = db.words[idx];
-
   const updated = {
     ...existing,
     word: body.word?.trim() ?? existing.word,
@@ -134,7 +205,7 @@ app.put('/api/words/:id', (req, res) => {
     translations: {
       en: body.translations?.en ?? existing.translations?.en ?? '',
       es: body.translations?.es ?? existing.translations?.es ?? '',
-      fr: body.translations?.fr ?? existing.translations?.fr ?? ''
+      fr: body.translations?.fr ?? existing.translations?.fr ?? '',
     },
     definition: body.definition ?? existing.definition,
     examples: body.examples ?? existing.examples,
@@ -144,59 +215,484 @@ app.put('/api/words/:id', (req, res) => {
     tags: body.tags ?? existing.tags,
     cefrLevel: body.cefrLevel ?? existing.cefrLevel,
     learningStatus: body.learningStatus ?? existing.learningStatus,
-    conjugations: body.category === 'verbe' || existing.category === 'verbe'
-      ? (body.conjugations ?? existing.conjugations)
-      : null,
+    conjugations:
+      body.category === 'verbe' || existing.category === 'verbe'
+        ? body.conjugations ?? existing.conjugations
+        : null,
     notes: body.notes ?? existing.notes,
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
   };
-
   db.words[idx] = updated;
-  saveData(db);
+  saveDb();
   res.json(updated);
 });
 
-// Delete word
-app.delete('/api/words/:id', (req, res) => {
-  const idx = db.words.findIndex(w => w.id === Number(req.params.id));
+app.delete('/api/words/:id', auth, (req, res) => {
+  const idx = db.words.findIndex((w) => w.id === Number(req.params.id) && w.userId === req.user.id);
   if (idx === -1) return res.status(404).json({ error: 'Mot non trouvé' });
+  const wordId = db.words[idx].id;
   db.words.splice(idx, 1);
-  saveData(db);
+  db.sets.forEach((s) => {
+    if (s.userId === req.user.id) s.wordIds = s.wordIds.filter((id) => id !== wordId);
+  });
+  db.progress = db.progress.filter((p) => !(p.userId === req.user.id && p.wordId === wordId));
+  saveDb();
   res.json({ message: 'Mot supprimé' });
 });
 
-// Stats
-app.get('/api/stats', (req, res) => {
-  const total = db.words.length;
+// ---------- Bulk import CSV / Excel ----------
+function normalizeRow(row) {
+  const get = (...keys) => {
+    for (const k of keys) {
+      const found = Object.keys(row).find((rk) => rk.toLowerCase().trim() === k.toLowerCase());
+      if (found && row[found] != null && String(row[found]).trim()) return String(row[found]).trim();
+    }
+    return '';
+  };
+  const word = get('word', 'mot', 'terme', 'term');
+  if (!word) return null;
+  const category = (get('category', 'catégorie', 'categorie', 'type') || 'nom').toLowerCase();
+  const validCats = ['verbe', 'nom', 'adjectif', 'expression', 'adverbe', 'autre'];
+  return {
+    word,
+    category: validCats.includes(category) ? category : 'nom',
+    ipa: get('ipa', 'pronunciation', 'prononciation') || `/${word}/`,
+    translations: {
+      en: get('en', 'english', 'anglais', 'translation', 'traduction'),
+      es: get('es', 'spanish', 'espagnol'),
+      fr: get('fr', 'french', 'français', 'definition_fr'),
+    },
+    definition: get('definition', 'définition', 'def'),
+    examples: [],
+    collocations: get('collocations')
+      ? get('collocations')
+          .split(/[;|]/)
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [],
+    synonyms: get('synonyms', 'synonymes')
+      ? get('synonyms', 'synonymes')
+          .split(/[;|,]/)
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [],
+    antonyms: get('antonyms', 'antonymes')
+      ? get('antonyms', 'antonymes')
+          .split(/[;|,]/)
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [],
+    tags: get('tags', 'étiquettes', 'etiquettes')
+      ? get('tags', 'étiquettes', 'etiquettes')
+          .split(/[;|,]/)
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [],
+    cefrLevel: get('cefr', 'level', 'niveau', 'cefrlevel'),
+    learningStatus: 'nouveau',
+    conjugations: null,
+    notes: get('notes', 'note'),
+  };
+}
+
+app.post('/api/import', auth, upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Fichier requis (CSV ou Excel)' });
+
+  const ext = path.extname(req.file.originalname).toLowerCase();
+  let rows = [];
+
+  try {
+    if (ext === '.csv' || req.file.mimetype === 'text/csv') {
+      rows = parse(req.file.buffer.toString('utf8'), {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+        bom: true,
+      });
+    } else if (ext === '.xlsx' || ext === '.xls' || req.file.mimetype.includes('spreadsheet')) {
+      const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    } else {
+      return res.status(400).json({ error: 'Format non supporté. Utilisez .csv, .xlsx ou .xls' });
+    }
+  } catch (e) {
+    return res.status(400).json({ error: 'Impossible de lire le fichier : ' + e.message });
+  }
+
+  const created = [];
+  const skipped = [];
+  const setId = req.body.setId ? Number(req.body.setId) : null;
+  let set = null;
+  if (setId) {
+    set = db.sets.find((s) => s.id === setId && s.userId === req.user.id);
+  }
+
+  for (const row of rows) {
+    const normalized = normalizeRow(row);
+    if (!normalized) {
+      skipped.push({ reason: 'Mot manquant', row });
+      continue;
+    }
+    const exists = db.words.find(
+      (w) => w.userId === req.user.id && w.word.toLowerCase() === normalized.word.toLowerCase()
+    );
+    if (exists && req.query.skipDuplicates !== 'false') {
+      skipped.push({ reason: 'Doublon', word: normalized.word });
+      if (set && !set.wordIds.includes(exists.id)) set.wordIds.push(exists.id);
+      continue;
+    }
+    const newWord = {
+      id: db.nextWordId++,
+      userId: req.user.id,
+      ...normalized,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    db.words.push(newWord);
+    created.push(newWord);
+    if (set) set.wordIds.push(newWord.id);
+  }
+  saveDb();
+  res.json({
+    message: `${created.length} mot(s) importé(s), ${skipped.length} ignoré(s)`,
+    created: created.length,
+    skipped: skipped.length,
+    words: created,
+  });
+});
+
+// ---------- Study Sets ----------
+app.get('/api/sets', auth, (req, res) => {
+  const sets = db.sets
+    .filter((s) => s.userId === req.user.id)
+    .map((s) => ({
+      ...s,
+      wordCount: s.wordIds.length,
+    }))
+    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+  res.json(sets);
+});
+
+app.post('/api/sets', auth, (req, res) => {
+  const { name, description, wordIds } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'Nom requis' });
+  const set = {
+    id: db.nextSetId++,
+    userId: req.user.id,
+    name: name.trim(),
+    description: description || '',
+    wordIds: Array.isArray(wordIds) ? wordIds.map(Number) : [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  db.sets.push(set);
+  saveDb();
+  res.status(201).json(set);
+});
+
+app.get('/api/sets/:id', auth, (req, res) => {
+  const set = db.sets.find((s) => s.id === Number(req.params.id) && s.userId === req.user.id);
+  if (!set) return res.status(404).json({ error: 'Ensemble non trouvé' });
+  const words = db.words.filter((w) => set.wordIds.includes(w.id) && w.userId === req.user.id);
+  res.json({ ...set, words });
+});
+
+app.put('/api/sets/:id', auth, (req, res) => {
+  const idx = db.sets.findIndex((s) => s.id === Number(req.params.id) && s.userId === req.user.id);
+  if (idx === -1) return res.status(404).json({ error: 'Ensemble non trouvé' });
+  const body = req.body;
+  db.sets[idx] = {
+    ...db.sets[idx],
+    name: body.name?.trim() ?? db.sets[idx].name,
+    description: body.description ?? db.sets[idx].description,
+    wordIds: body.wordIds !== undefined ? body.wordIds.map(Number) : db.sets[idx].wordIds,
+    updatedAt: new Date().toISOString(),
+  };
+  saveDb();
+  res.json(db.sets[idx]);
+});
+
+app.delete('/api/sets/:id', auth, (req, res) => {
+  const idx = db.sets.findIndex((s) => s.id === Number(req.params.id) && s.userId === req.user.id);
+  if (idx === -1) return res.status(404).json({ error: 'Ensemble non trouvé' });
+  db.sets.splice(idx, 1);
+  saveDb();
+  res.json({ message: 'Ensemble supprimé' });
+});
+
+app.post('/api/sets/:id/words', auth, (req, res) => {
+  const set = db.sets.find((s) => s.id === Number(req.params.id) && s.userId === req.user.id);
+  if (!set) return res.status(404).json({ error: 'Ensemble non trouvé' });
+  const ids = (req.body.wordIds || []).map(Number);
+  ids.forEach((id) => {
+    if (!set.wordIds.includes(id) && db.words.some((w) => w.id === id && w.userId === req.user.id)) {
+      set.wordIds.push(id);
+    }
+  });
+  set.updatedAt = new Date().toISOString();
+  saveDb();
+  res.json(set);
+});
+
+// ---------- Progress / Spaced repetition (SM-2 simplified) ----------
+function getProgress(userId, wordId) {
+  let p = db.progress.find((x) => x.userId === userId && x.wordId === wordId);
+  if (!p) {
+    p = {
+      userId,
+      wordId,
+      ease: 2.5,
+      interval: 0,
+      repetitions: 0,
+      nextReview: new Date().toISOString(),
+      correctCount: 0,
+      incorrectCount: 0,
+      lastReviewed: null,
+      status: 'nouveau', // nouveau | learning | review | mastered
+    };
+    db.progress.push(p);
+  }
+  return p;
+}
+
+app.get('/api/progress', auth, (req, res) => {
+  const list = db.progress.filter((p) => p.userId === req.user.id);
+  res.json(list);
+});
+
+app.get('/api/progress/due', auth, (req, res) => {
+  const now = new Date();
+  const setId = req.query.setId ? Number(req.query.setId) : null;
+  let wordIds = null;
+  if (setId) {
+    const set = db.sets.find((s) => s.id === setId && s.userId === req.user.id);
+    if (set) wordIds = new Set(set.wordIds);
+  }
+  let words = db.words.filter((w) => w.userId === req.user.id);
+  if (wordIds) words = words.filter((w) => wordIds.has(w.id));
+
+  const due = words
+    .map((w) => {
+      const p = getProgress(req.user.id, w.id);
+      return { word: w, progress: p };
+    })
+    .filter(({ progress }) => new Date(progress.nextReview) <= now)
+    .sort((a, b) => new Date(a.progress.nextReview) - new Date(b.progress.nextReview));
+
+  saveDb();
+  res.json(due);
+});
+
+app.post('/api/progress/review', auth, (req, res) => {
+  const { wordId, quality } = req.body; // quality 0-5 (SM-2)
+  if (!wordId || quality === undefined) {
+    return res.status(400).json({ error: 'wordId et quality (0-5) requis' });
+  }
+  const q = Math.max(0, Math.min(5, Number(quality)));
+  const word = db.words.find((w) => w.id === Number(wordId) && w.userId === req.user.id);
+  if (!word) return res.status(404).json({ error: 'Mot non trouvé' });
+
+  const p = getProgress(req.user.id, word.id);
+  p.lastReviewed = new Date().toISOString();
+
+  if (q >= 3) {
+    p.correctCount++;
+    if (p.repetitions === 0) {
+      p.interval = 1;
+    } else if (p.repetitions === 1) {
+      p.interval = 3;
+    } else {
+      p.interval = Math.round(p.interval * p.ease);
+    }
+    p.repetitions++;
+    p.ease = Math.max(1.3, p.ease + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02)));
+    if (p.repetitions >= 5 && p.ease >= 2.5) p.status = 'mastered';
+    else if (p.repetitions >= 1) p.status = 'review';
+    else p.status = 'learning';
+  } else {
+    p.incorrectCount++;
+    p.repetitions = 0;
+    p.interval = 0;
+    p.status = 'learning';
+    p.ease = Math.max(1.3, p.ease - 0.2);
+  }
+
+  const next = new Date();
+  next.setDate(next.getDate() + Math.max(1, p.interval));
+  p.nextReview = next.toISOString();
+
+  // sync learningStatus on word
+  if (p.status === 'mastered') word.learningStatus = 'appris';
+  else if (p.status === 'learning' || p.status === 'review') word.learningStatus = 'en_cours';
+  word.updatedAt = new Date().toISOString();
+
+  saveDb();
+  res.json({ progress: p, word });
+});
+
+// ---------- Study session helpers ----------
+app.get('/api/study/:setId/cards', auth, (req, res) => {
+  const set = db.sets.find((s) => s.id === Number(req.params.setId) && s.userId === req.user.id);
+  if (!set) return res.status(404).json({ error: 'Ensemble non trouvé' });
+  const words = db.words.filter((w) => set.wordIds.includes(w.id) && w.userId === req.user.id);
+  const cards = words.map((w) => ({
+    id: w.id,
+    front: w.word,
+    back: w.translations?.en || w.definition || '',
+    ipa: w.ipa,
+    category: w.category,
+    example: w.examples?.[0]?.sentence || '',
+    progress: getProgress(req.user.id, w.id),
+  }));
+  saveDb();
+  res.json(cards);
+});
+
+app.get('/api/study/:setId/quiz', auth, (req, res) => {
+  const set = db.sets.find((s) => s.id === Number(req.params.setId) && s.userId === req.user.id);
+  if (!set) return res.status(404).json({ error: 'Ensemble non trouvé' });
+  let words = db.words.filter((w) => set.wordIds.includes(w.id) && w.userId === req.user.id);
+  if (words.length < 2) {
+    return res.status(400).json({ error: 'Au moins 2 mots nécessaires pour un quiz' });
+  }
+  // shuffle
+  words = [...words].sort(() => Math.random() - 0.5);
+  const limit = Math.min(words.length, Number(req.query.limit) || 20);
+  words = words.slice(0, limit);
+
+  const questions = words.map((w) => {
+    const others = words
+      .filter((o) => o.id !== w.id)
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 3)
+      .map((o) => o.translations?.en || o.word);
+    const correct = w.translations?.en || w.definition || w.word;
+    const options = [...others, correct].sort(() => Math.random() - 0.5);
+    return {
+      wordId: w.id,
+      prompt: w.word,
+      ipa: w.ipa,
+      type: 'mcq',
+      options,
+      // correct answer not sent — client submits and we validate
+    };
+  });
+  res.json({ questions, setName: set.name });
+});
+
+app.post('/api/study/quiz/check', auth, (req, res) => {
+  const { wordId, answer, type } = req.body;
+  const word = db.words.find((w) => w.id === Number(wordId) && w.userId === req.user.id);
+  if (!word) return res.status(404).json({ error: 'Mot non trouvé' });
+
+  const correctAnswers = [
+    (word.translations?.en || '').toLowerCase().trim(),
+    (word.translations?.es || '').toLowerCase().trim(),
+    (word.definition || '').toLowerCase().trim(),
+    word.word.toLowerCase().trim(),
+  ].filter(Boolean);
+
+  const userAns = String(answer || '')
+    .toLowerCase()
+    .trim();
+  let correct = false;
+  if (type === 'mcq') {
+    correct = correctAnswers.includes(userAns) || userAns === (word.translations?.en || '').toLowerCase();
+  } else {
+    // written — fuzzy: exact or contains main translation
+    correct =
+      correctAnswers.some((c) => c === userAns || (c && userAns.includes(c)) || (c && c.includes(userAns))) &&
+      userAns.length > 0;
+  }
+
+  // auto record progress
+  const quality = correct ? 4 : 1;
+  const p = getProgress(req.user.id, word.id);
+  // reuse review logic lightly
+  p.lastReviewed = new Date().toISOString();
+  if (correct) {
+    p.correctCount++;
+    p.repetitions = (p.repetitions || 0) + 1;
+    p.interval = p.repetitions === 1 ? 1 : p.repetitions === 2 ? 3 : Math.round((p.interval || 1) * (p.ease || 2.5));
+    p.ease = Math.max(1.3, (p.ease || 2.5) + 0.1);
+    p.status = p.repetitions >= 5 ? 'mastered' : 'review';
+  } else {
+    p.incorrectCount++;
+    p.repetitions = 0;
+    p.interval = 0;
+    p.status = 'learning';
+  }
+  const next = new Date();
+  next.setDate(next.getDate() + Math.max(1, p.interval || 1));
+  p.nextReview = next.toISOString();
+  if (p.status === 'mastered') word.learningStatus = 'appris';
+  else word.learningStatus = 'en_cours';
+  saveDb();
+
+  res.json({
+    correct,
+    correctAnswer: word.translations?.en || word.definition,
+    word: word.word,
+    progress: p,
+  });
+});
+
+// ---------- Stats ----------
+app.get('/api/stats', auth, (req, res) => {
+  const words = db.words.filter((w) => w.userId === req.user.id);
+  const progress = db.progress.filter((p) => p.userId === req.user.id);
+  const sets = db.sets.filter((s) => s.userId === req.user.id);
   const byCategory = {};
   const byStatus = {};
-  db.words.forEach(w => {
+  words.forEach((w) => {
     byCategory[w.category] = (byCategory[w.category] || 0) + 1;
     byStatus[w.learningStatus] = (byStatus[w.learningStatus] || 0) + 1;
   });
-  res.json({ total, byCategory, byStatus });
+  const now = new Date();
+  const dueCount = progress.filter((p) => new Date(p.nextReview) <= now).length;
+  const mastered = progress.filter((p) => p.status === 'mastered').length;
+  res.json({
+    total: words.length,
+    byCategory,
+    byStatus,
+    setsCount: sets.length,
+    dueCount,
+    mastered,
+    totalReviews: progress.reduce((s, p) => s + p.correctCount + p.incorrectCount, 0),
+  });
 });
 
-// Seed sample data
-app.post('/api/seed', (req, res) => {
-  if (db.words.length > 0 && !req.query.force) {
-    return res.status(400).json({ error: 'Base déjà remplie. Utilisez ?force=true' });
+// ---------- Seed sample for current user ----------
+app.post('/api/seed', auth, (req, res) => {
+  if (db.words.some((w) => w.userId === req.user.id) && !req.query.force) {
+    return res.status(400).json({ error: 'Vous avez déjà des mots. Utilisez ?force=true' });
   }
-  db = { words: [], nextId: 1 };
-  const samples = getSampleData();
-  samples.forEach(s => {
-    s.id = db.nextId++;
-    s.createdAt = new Date().toISOString();
-    s.updatedAt = s.createdAt;
+  const samples = getSampleWords(req.user.id);
+  samples.forEach((s) => {
+    s.id = db.nextWordId++;
     db.words.push(s);
   });
-  saveData(db);
-  res.json({ message: `${samples.length} mots ajoutés`, count: samples.length });
+  // create a default set
+  const set = {
+    id: db.nextSetId++,
+    userId: req.user.id,
+    name: 'Exemples français',
+    description: 'Mots de démonstration (dont le verbe poser)',
+    wordIds: samples.map((s) => s.id),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  db.sets.push(set);
+  saveDb();
+  res.json({ message: `${samples.length} mots + 1 ensemble ajoutés`, count: samples.length, setId: set.id });
 });
 
-function getSampleData() {
+function getSampleWords(userId) {
+  const now = new Date().toISOString();
   return [
     {
+      userId,
       word: 'poser',
       category: 'verbe',
       ipa: '/po.ze/',
@@ -204,10 +700,10 @@ function getSampleData() {
       definition: 'Mettre quelque chose en un endroit ; formuler une question.',
       examples: [
         { sentence: 'Je voudrais poser une question.', translation: 'I would like to ask a question.' },
-        { sentence: 'Il a posé le livre sur la table.', translation: 'He put the book on the table.' }
+        { sentence: 'Il a posé le livre sur la table.', translation: 'He put the book on the table.' },
       ],
-      collocations: ['poser une question', 'poser un problème', 'poser un diagnostic', 'poser quelque chose sur'],
-      synonyms: ['interroger', 'questionner', 'mettre', 'placer'],
+      collocations: ['poser une question', 'poser un problème', 'poser un diagnostic'],
+      synonyms: ['interroger', 'questionner', 'mettre'],
       antonyms: [],
       tags: ['communication', 'travail'],
       cefrLevel: 'A2–B1',
@@ -220,7 +716,7 @@ function getSampleData() {
             'il/elle/on': 'pose',
             nous: 'posons',
             vous: 'posez',
-            'ils/elles': 'posent'
+            'ils/elles': 'posent',
           },
           imparfait: {
             je: 'posais',
@@ -228,7 +724,7 @@ function getSampleData() {
             'il/elle/on': 'posait',
             nous: 'posions',
             vous: 'posiez',
-            'ils/elles': 'posaient'
+            'ils/elles': 'posaient',
           },
           futur_simple: {
             je: 'poserai',
@@ -236,7 +732,7 @@ function getSampleData() {
             'il/elle/on': 'posera',
             nous: 'poserons',
             vous: 'poserez',
-            'ils/elles': 'poseront'
+            'ils/elles': 'poseront',
           },
           passe_compose: {
             je: 'ai posé',
@@ -244,107 +740,67 @@ function getSampleData() {
             'il/elle/on': 'a posé',
             nous: 'avons posé',
             vous: 'avez posé',
-            'ils/elles': 'ont posé'
+            'ils/elles': 'ont posé',
           },
-          plus_que_parfait: {
-            je: 'avais posé',
-            tu: 'avais posé',
-            'il/elle/on': 'avait posé',
-            nous: 'avions posé',
-            vous: 'aviez posé',
-            'ils/elles': 'avaient posé'
-          },
-          passe_simple: {
-            je: 'posai',
-            tu: 'posas',
-            'il/elle/on': 'posa',
-            nous: 'posâmes',
-            vous: 'posâtes',
-            'ils/elles': 'posèrent'
-          }
         },
-        subjonctif: {
-          present: {
-            que_je: 'pose',
-            que_tu: 'poses',
-            'qu_il/elle/on': 'pose',
-            que_nous: 'posions',
-            que_vous: 'posiez',
-            'qu_ils/elles': 'posent'
-          }
-        },
-        conditionnel: {
-          present: {
-            je: 'poserais',
-            tu: 'poserais',
-            'il/elle/on': 'poserait',
-            nous: 'poserions',
-            vous: 'poseriez',
-            'ils/elles': 'poseraient'
-          }
-        },
-        imperatif: {
-          present: {
-            tu: 'pose',
-            nous: 'posons',
-            vous: 'posez'
-          }
-        },
+        imperatif: { present: { tu: 'pose', nous: 'posons', vous: 'posez' } },
         infinitif: { present: 'poser', passe: 'avoir posé' },
         participe: { present: 'posant', passe: 'posé' },
-        gerondif: { present: 'en posant' }
       },
-      notes: 'Verbe du 1er groupe. Attention aux collocations.'
+      notes: 'Verbe du 1er groupe.',
+      createdAt: now,
+      updatedAt: now,
     },
     {
+      userId,
       word: 'maison',
       category: 'nom',
       ipa: '/mɛ.zɔ̃/',
       translations: { en: 'house; home', es: 'casa', fr: '' },
-      definition: 'Bâtiment destiné à l\'habitation.',
-      examples: [
-        { sentence: 'J\'habite dans une grande maison.', translation: 'I live in a big house.' }
-      ],
-      collocations: ['maison de campagne', 'maison individuelle', 'à la maison'],
-      synonyms: ['habitation', 'demeure', 'foyer'],
+      definition: "Bâtiment destiné à l'habitation.",
+      examples: [{ sentence: "J'habite dans une grande maison.", translation: 'I live in a big house.' }],
+      collocations: ['maison de campagne', 'à la maison'],
+      synonyms: ['habitation', 'demeure'],
       antonyms: [],
-      tags: ['quotidien', 'logement'],
+      tags: ['quotidien'],
       cefrLevel: 'A1',
       learningStatus: 'appris',
       conjugations: null,
-      notes: ''
+      notes: '',
+      createdAt: now,
+      updatedAt: now,
     },
     {
+      userId,
       word: 'beau',
       category: 'adjectif',
       ipa: '/bo/',
-      translations: { en: 'beautiful; handsome', es: 'hermoso; bello', fr: '' },
-      definition: 'Qui suscite l\'admiration par son apparence.',
-      examples: [
-        { sentence: 'C\'est un beau paysage.', translation: 'It is a beautiful landscape.' }
-      ],
-      collocations: ['beau temps', 'belle personne', 'il fait beau'],
-      synonyms: ['joli', 'magnifique', 'splendide'],
-      antonyms: ['laid', 'moche'],
+      translations: { en: 'beautiful; handsome', es: 'hermoso', fr: '' },
+      definition: "Qui suscite l'admiration par son apparence.",
+      examples: [{ sentence: "C'est un beau paysage.", translation: 'It is a beautiful landscape.' }],
+      collocations: ['beau temps', 'il fait beau'],
+      synonyms: ['joli', 'magnifique'],
+      antonyms: ['laid'],
       tags: ['description'],
       cefrLevel: 'A1',
       learningStatus: 'nouveau',
       conjugations: null,
-      notes: 'Formes : beau / belle / beaux / belles. Attention au masculin devant voyelle : bel.'
+      notes: 'beau / belle / beaux / belles',
+      createdAt: now,
+      updatedAt: now,
     },
     {
+      userId,
       word: 'mettre',
       category: 'verbe',
       ipa: '/mɛtʁ/',
-      translations: { en: 'to put; to place; to wear', es: 'poner; meter', fr: '' },
-      definition: 'Placer quelque chose quelque part ; revêtir un vêtement.',
-      examples: [
-        { sentence: 'Mets le livre sur la table.', translation: 'Put the book on the table.' }
-      ],
-      collocations: ['mettre en place', 'mettre à jour', 'se mettre à'],
-      synonyms: ['placer', 'poser', 'installer'],
-      antonyms: ['enlever', 'retirer'],
-      tags: ['quotidien', 'action'],
+      translations: { en: 'to put; to place', es: 'poner', fr: '' },
+      definition: 'Placer quelque chose quelque part.',
+      examples: [{ sentence: 'Mets le livre sur la table.', translation: 'Put the book on the table.' }],
+      collocations: ['mettre en place', 'se mettre à'],
+      synonyms: ['placer', 'poser'],
+      antonyms: ['enlever'],
+      tags: ['quotidien'],
       cefrLevel: 'A2',
       learningStatus: 'en_cours',
       conjugations: {
@@ -355,7 +811,7 @@ function getSampleData() {
             'il/elle/on': 'met',
             nous: 'mettons',
             vous: 'mettez',
-            'ils/elles': 'mettent'
+            'ils/elles': 'mettent',
           },
           passe_compose: {
             je: 'ai mis',
@@ -363,22 +819,44 @@ function getSampleData() {
             'il/elle/on': 'a mis',
             nous: 'avons mis',
             vous: 'avez mis',
-            'ils/elles': 'ont mis'
-          }
+            'ils/elles': 'ont mis',
+          },
         },
-        imperatif: {
-          present: { tu: 'mets', nous: 'mettons', vous: 'mettez' }
-        },
+        imperatif: { present: { tu: 'mets', nous: 'mettons', vous: 'mettez' } },
         infinitif: { present: 'mettre' },
-        participe: { present: 'mettant', passe: 'mis' }
+        participe: { present: 'mettant', passe: 'mis' },
       },
-      notes: 'Verbe irrégulier du 3e groupe.'
-    }
+      notes: 'Verbe irrégulier.',
+      createdAt: now,
+      updatedAt: now,
+    },
+    {
+      userId,
+      word: 'apprendre',
+      category: 'verbe',
+      ipa: '/a.pʁɑ̃dʁ/',
+      translations: { en: 'to learn', es: 'aprender', fr: '' },
+      definition: 'Acquérir une connaissance ou un savoir-faire.',
+      examples: [{ sentence: "J'apprends le français.", translation: 'I am learning French.' }],
+      collocations: ['apprendre par cœur', 'apprendre à faire'],
+      synonyms: ['étudier', 'maîtriser'],
+      antonyms: ['oublier'],
+      tags: ['éducation'],
+      cefrLevel: 'A2',
+      learningStatus: 'nouveau',
+      conjugations: null,
+      notes: '',
+      createdAt: now,
+      updatedAt: now,
+    },
   ];
 }
 
-// Start
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', port: PORT });
+});
+
 app.listen(PORT, () => {
-  console.log(`🚀 Vocab API running on http://localhost:${PORT}`);
-  console.log(`📚 Words loaded: ${db.words.length}`);
+  console.log(`🚀 Vocab API on http://localhost:${PORT}`);
+  console.log(`📚 Users: ${db.users.length} | Words: ${db.words.length} | Sets: ${db.sets.length}`);
 });

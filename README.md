@@ -1,120 +1,82 @@
-# Vocabulaire FR — Application MERN de vocabulaire
+# Vocabulaire FR — Dictionnaire + Flashcards + Quiz
 
-Application full-stack pour apprendre et gérer du vocabulaire français, avec support spécial des **conjugaisons** pour les verbes.
-
-## Stack
-
-- **Frontend** : React 18 + TypeScript + Vite + Tailwind CSS + React Router
-- **Backend** : Node.js + Express (JSON file store pour simplicité de démarrage ; structure prête pour MongoDB/Mongoose)
-- **Données** : Fichier JSON persistant (`server/data/words.json`)
-
-> Note : L'architecture et les modèles suivent une logique MERN. Le stockage JSON permet de démarrer immédiatement sans MongoDB. Pour basculer sur MongoDB, remplacez le store fichier par Mongoose (modèles déjà pensés pour ça).
+Application d'apprentissage du vocabulaire français inspirée de Quizlet, avec fiches détaillées (IPA, conjugaisons, collocations…).
 
 ## Fonctionnalités
 
-- Fiches de vocabulaire : mot, IPA, catégorie, traductions (EN/ES), définition, exemples, collocations, synonymes, antonymes, étiquettes, niveau CECR, statut d'apprentissage
-- **Conjugaisons** (verbes uniquement) :
-  - Modes : indicatif, subjonctif, conditionnel, impératif, infinitif, participe, gérondif
-  - Temps : présent, imparfait, futur simple, passé composé, plus-que-parfait, passé simple, etc.
-  - Personnes : je, tu, il/elle/on, nous, vous, ils/elles
-  - Interface à onglets + copie des formes
-- Filtres et recherche
-- Tableau de bord avec statistiques
-- Données d'exemple incluant le verbe **poser** avec conjugaisons complètes
+### Compte utilisateur
+- Inscription / connexion (JWT)
+- Données isolées par utilisateur
 
-## Installation & démarrage
+### Dictionnaire personnel
+- Fiches complètes : mot, IPA, catégorie, traductions EN/ES, exemples, collocations, synonymes, antonymes, tags, CECR
+- **Conjugaisons** (verbes uniquement) : modes × temps × personnes
+- Import **CSV / Excel** en masse
 
-### Prérequis
-- Node.js 18+
-- npm
+### Ensembles d'étude (Study Sets)
+- Créer des listes thématiques
+- Lier des mots à un ensemble
 
-### 1. Backend
+### Modes d'apprentissage (style Quizlet)
+| Mode | Description |
+|------|-------------|
+| **Flashcards** | Recto/verso, marquer « Je sais » / « À revoir » |
+| **Quiz QCM** | Choix multiples |
+| **Quiz écrit** | Taper la traduction |
+| **Répétition espacée** | Algorithme SM-2 simplifié |
 
+### Suivi
+- Mots maîtrisés / à réviser
+- Statistiques par catégorie et statut
+
+## Démarrage
+
+### Backend (port 5001)
 ```bash
 cd server
 npm install
 npm run dev
-# → http://localhost:5000
 ```
 
-### 2. Frontend (autre terminal)
-
+### Frontend
 ```bash
 cd client
 npm install
 npm run dev
-# → http://localhost:5173
+```
+→ http://localhost:5173
+
+1. Créez un compte (S'inscrire)
+2. Cliquez « Exemples » sur le tableau de bord (verbe *poser* + autres)
+3. Allez dans **Ensembles** → **Étudier** (flashcards) ou **Quiz**
+
+## Import CSV / Excel
+
+Colonnes reconnues (en-têtes flexibles) :
+`word` / `mot`, `en` / `english`, `es`, `ipa`, `category`, `tags`, `cefr`, `synonyms`, `notes`…
+
+Exemple CSV :
+```csv
+word,en,es,ipa,category,tags,cefr
+poser,to ask; to put,poner,/po.ze/,verbe,communication,A2
+maison,house,casa,/mɛ.zɔ̃/,nom,quotidien,A1
 ```
 
-Le proxy Vite redirige `/api` vers le backend.
+## Stack
 
-### 3. Charger les exemples
+- **Frontend** : React 18 + TypeScript + Vite + Tailwind + React Router
+- **Backend** : Node.js + Express + JWT + bcrypt + multer + xlsx + csv-parse
+- **Stockage** : fichier JSON multi-utilisateurs (prêt à migrer vers MongoDB)
 
-Sur le tableau de bord, cliquez sur **« Charger exemples »** (ou `POST /api/seed`).
-
-Cela ajoute notamment le verbe **poser** avec ses conjugaisons, plus d'autres mots.
-
-## Structure des données (verbe)
-
-```json
-{
-  "word": "poser",
-  "category": "verbe",
-  "ipa": "/po.ze/",
-  "translations": { "en": "to ask; to put", "es": "..." },
-  "examples": [{ "sentence": "...", "translation": "..." }],
-  "collocations": ["poser une question", ...],
-  "synonyms": ["interroger", ...],
-  "tags": ["communication", "travail"],
-  "cefrLevel": "A2–B1",
-  "learningStatus": "en_cours",
-  "conjugations": {
-    "indicatif": {
-      "present": {
-        "je": "pose",
-        "tu": "poses",
-        "il/elle/on": "pose",
-        "nous": "posons",
-        "vous": "posez",
-        "ils/elles": "posent"
-      },
-      "imparfait": { ... },
-      "futur_simple": { ... },
-      "passe_compose": { ... }
-    },
-    "subjonctif": { "present": { ... } },
-    "conditionnel": { "present": { ... } },
-    "imperatif": { "present": { "tu": "pose", ... } },
-    "infinitif": { "present": "poser", "passe": "avoir posé" },
-    "participe": { "present": "posant", "passe": "posé" },
-    "gerondif": { "present": "en posant" }
-  }
-}
-```
-
-Les champs de conjugaison n'apparaissent **que** pour la catégorie `verbe`.
-
-## API
+## Structure API (principale)
 
 | Méthode | Route | Description |
 |---------|-------|-------------|
-| GET | `/api/words` | Liste (query: search, category, status, tag, level) |
-| GET | `/api/words/:id` | Détail |
-| POST | `/api/words` | Créer |
-| PUT | `/api/words/:id` | Modifier |
-| DELETE | `/api/words/:id` | Supprimer |
-| GET | `/api/stats` | Statistiques |
-| POST | `/api/seed` | Charger exemples (`?force=true`) |
-
-## Évolutions possibles
-
-- Connexion MongoDB Atlas + Mongoose
-- Authentification (JWT)
-- Import/export CSV ou Anki
-- Service de conjugaison automatique (API externe)
-- Mode révision / flashcards
-- Support multi-langues source (ES, DE, etc.)
-
----
-
-Créé pour l'apprentissage du français avec un focus particulier sur les verbes et leurs conjugaisons.
+| POST | `/api/auth/register` | Inscription |
+| POST | `/api/auth/login` | Connexion |
+| GET | `/api/words` | Liste (auth) |
+| POST | `/api/import` | Import fichier |
+| GET/POST | `/api/sets` | Ensembles |
+| GET | `/api/study/:setId/cards` | Flashcards |
+| GET | `/api/study/:setId/quiz` | Questions quiz |
+| POST | `/api/progress/review` | Enregistrer une révision |
