@@ -56,14 +56,14 @@ export default function Quiz() {
     else setIdx(idx + 1)
   }
 
-  if (loading) return <div className="text-center py-20 text-slate-400">Chargement…</div>
+  if (loading) return <div className="text-center py-20 text-slate-400">{t('loading')}</div>
 
   if (questions.length === 0) {
     return (
       <div className="text-center py-16 space-y-4">
-        <p className="text-slate-500">Pas assez de mots pour un quiz (min. 2).</p>
+        <p className="text-slate-500">{t('needTwoWords')}</p>
         <Link to={`/sets/${setId}`} className="btn-primary inline-flex">
-          Retour
+          {t('cancel')}
         </Link>
       </div>
     )
@@ -73,7 +73,7 @@ export default function Quiz() {
     const pct = Math.round((score.correct / score.total) * 100)
     return (
       <div className="max-w-md mx-auto text-center space-y-6 py-12">
-        <h1 className="text-2xl font-bold">Quiz terminé</h1>
+        <h1 className="text-2xl font-bold">{t('quizDone')}</h1>
         <div className="card p-6">
           <p className="text-4xl font-bold text-primary-600">{pct}%</p>
           <p className="text-slate-600 mt-2">
@@ -90,10 +90,10 @@ export default function Quiz() {
             }}
             className="btn-primary"
           >
-            Recommencer
+            {t('restart')}
           </button>
           <Link to={`/sets/${setId}`} className="btn-secondary">
-            Retour
+            {t('cancel')}
           </Link>
         </div>
       </div>
@@ -117,20 +117,20 @@ export default function Quiz() {
             onClick={() => setMode('mcq')}
             className={`text-xs px-2 py-1 rounded ${mode === 'mcq' ? 'bg-primary-100 text-primary-800' : 'text-slate-500'}`}
           >
-            QCM
+            {t('mcq')}
           </button>
           <button
             onClick={() => setMode('write')}
             className={`text-xs px-2 py-1 rounded ${mode === 'write' ? 'bg-primary-100 text-primary-800' : 'text-slate-500'}`}
           >
-            Écrire
+            {t('write')}
           </button>
         </div>
       </div>
 
       <div className="card p-6 space-y-4">
         <div className="text-center">
-          <p className="text-xs text-slate-400 uppercase">Traduisez</p>
+          <p className="text-xs text-slate-400 uppercase">{t('translate')}</p>
           <p className="text-3xl font-bold mt-1">{q.prompt}</p>
           <p className="font-mono text-slate-400 text-sm">{q.ipa}</p>
         </div>
@@ -165,7 +165,7 @@ export default function Quiz() {
         {mode === 'write' && (
           <input
             className="input text-center text-lg"
-            placeholder="Votre réponse…"
+            placeholder={t('writeAnswer')}
             value={written}
             onChange={(e) => setWritten(e.target.value)}
             disabled={!!feedback}
@@ -183,7 +183,7 @@ export default function Quiz() {
             }`}
           >
             {feedback.correct ? <Check className="w-5 h-5" /> : <X className="w-5 h-5" />}
-            {feedback.correct ? 'Correct !' : `Incorrect — réponse : ${feedback.correctAnswer}`}
+            {feedback.correct ? t('correct') : `${t('incorrect')} ${feedback.correctAnswer}`}
           </div>
         )}
 
@@ -193,11 +193,11 @@ export default function Quiz() {
             className="btn-primary w-full"
             disabled={mode === 'mcq' ? !selected : !written.trim()}
           >
-            Valider
+            {t('validate')}
           </button>
         ) : (
           <button onClick={next} className="btn-primary w-full">
-            {idx + 1 >= questions.length ? 'Voir le score' : 'Suivant'}
+            {idx + 1 >= questions.length ? t('seeScore') : t('next')}
           </button>
         )}
       </div>

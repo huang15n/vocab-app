@@ -14,6 +14,7 @@ import {
   CONJUGATION_TENSES_PRIORITY,
   CONJUGATION_TENSES_LATER,
 } from '../types'
+import { useLang } from '../context/LanguageContext'
 
 const emptyPerson = (): PersonForms => ({
   je: '',
@@ -61,6 +62,7 @@ function emptyConjugations(): Conjugations {
 export default function WordForm() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { t } = useLang()
   const isEdit = Boolean(id)
   const [form, setForm] = useState<WordFormData>(emptyForm)
   const [loading, setLoading] = useState(isEdit)
@@ -225,7 +227,7 @@ export default function WordForm() {
     }
   }
 
-  if (loading) return <div className="text-center py-20 text-slate-400">Chargement…</div>
+  if (loading) return <div className="text-center py-20 text-slate-400">{t('loading')}</div>
 
   const renderTenseBlock = (key: string, label: string) => {
     const isImperatif = key === 'imperatif_present'
@@ -271,7 +273,7 @@ export default function WordForm() {
           <ArrowLeft className="w-4 h-4" />
         </Link>
         <h1 className="text-2xl font-bold text-slate-900">
-          {isEdit ? 'Modifier le mot' : 'Nouveau mot'}
+          {isEdit ? t('editWord') : t('newWord')}
         </h1>
       </div>
 
@@ -284,10 +286,10 @@ export default function WordForm() {
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Basic */}
         <div className="card p-5 space-y-4">
-          <h2 className="font-semibold text-slate-800">Informations de base</h2>
+          <h2 className="font-semibold text-slate-800">{t('basicInfo')}</h2>
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
-              <label className="label">Mot français *</label>
+              <label className="label">{t('wordFr')} *</label>
               <input
                 className="input"
                 value={form.fr}
@@ -308,37 +310,37 @@ export default function WordForm() {
           </div>
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
-              <label className="label">Catégorie grammaticale *</label>
+              <label className="label">{t('category')} *</label>
               <select
                 className="input"
                 value={form.category}
                 onChange={(e) => handleCategoryChange(e.target.value as Category)}
               >
-                <option value="verbe">Verbe</option>
-                <option value="nom">Nom</option>
-                <option value="adjectif">Adjectif</option>
-                <option value="expression">Expression</option>
-                <option value="adverbe">Adverbe</option>
-                <option value="autre">Autre</option>
+                <option value="verbe">{t('verb')}</option>
+                <option value="nom">{t('noun')}</option>
+                <option value="adjectif">{t('adjective')}</option>
+                <option value="expression">{t('expression')}</option>
+                <option value="adverbe">{t('adverb')}</option>
+                <option value="autre">{t('other')}</option>
               </select>
             </div>
             {form.category === 'nom' && (
               <div>
-                <label className="label">Genre *</label>
+                <label className="label">{t('gender')} *</label>
                 <select
                   className="input"
                   value={form.gender || ''}
                   onChange={(e) => updateField('gender', e.target.value as Gender)}
                 >
                   <option value="">— Choisir —</option>
-                  <option value="masculin">Masculin</option>
-                  <option value="feminin">Féminin</option>
-                  <option value="invariable">Invariable</option>
+                  <option value="masculin">{t('masculine')}</option>
+                  <option value="feminin">{t('feminine')}</option>
+                  <option value="invariable">{t('invariable')}</option>
                 </select>
               </div>
             )}
             <div>
-              <label className="label">Niveau CECR</label>
+              <label className="label">{t('cefr')}</label>
               <select
                 className="input"
                 value={form.cefrLevel}
@@ -355,7 +357,7 @@ export default function WordForm() {
               </select>
             </div>
             <div>
-              <label className="label">Statut d'apprentissage *</label>
+              <label className="label">{t('status')} *</label>
               <select
                 className="input"
                 value={form.learningStatus}
@@ -363,10 +365,10 @@ export default function WordForm() {
                   updateField('learningStatus', e.target.value as LearningStatus)
                 }
               >
-                <option value="nouveau">Nouveau</option>
-                <option value="en_cours">En cours</option>
-                <option value="appris">Appris</option>
-                <option value="a_reviser">À réviser</option>
+                <option value="nouveau">{t('statusNew')}</option>
+                <option value="en_cours">{t('statusLearning')}</option>
+                <option value="appris">{t('statusLearned')}</option>
+                <option value="a_reviser">{t('statusReview')}</option>
               </select>
             </div>
           </div>
@@ -374,10 +376,10 @@ export default function WordForm() {
 
         {/* Three languages */}
         <div className="card p-5 space-y-4">
-          <h2 className="font-semibold text-slate-800">Les 3 langues</h2>
+          <h2 className="font-semibold text-slate-800">{t('translations')}</h2>
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
-              <label className="label">Mot anglais *</label>
+              <label className="label">{t('wordEn')} *</label>
               <input
                 className="input"
                 value={form.en}
@@ -387,7 +389,7 @@ export default function WordForm() {
               />
             </div>
             <div>
-              <label className="label">Exemple anglais</label>
+              <label className="label">{t('exampleEn')}</label>
               <input
                 className="input"
                 value={form.exampleEn || ''}
@@ -396,7 +398,7 @@ export default function WordForm() {
               />
             </div>
             <div>
-              <label className="label">Mot espagnol</label>
+              <label className="label">{t('wordEs')}</label>
               <input
                 className="input"
                 value={form.es}
@@ -405,7 +407,7 @@ export default function WordForm() {
               />
             </div>
             <div>
-              <label className="label">Exemple espagnol</label>
+              <label className="label">{t('exampleEs')}</label>
               <input
                 className="input"
                 value={form.exampleEs || ''}
@@ -414,7 +416,7 @@ export default function WordForm() {
               />
             </div>
             <div className="sm:col-span-2">
-              <label className="label">Exemple français</label>
+              <label className="label">{t('exampleFr')}</label>
               <input
                 className="input"
                 value={form.exampleFr || ''}
@@ -424,7 +426,7 @@ export default function WordForm() {
             </div>
           </div>
           <div>
-            <label className="label">Définition (optionnel)</label>
+            <label className="label">{t('definition')}</label>
             <textarea
               className="input"
               rows={2}
@@ -437,13 +439,13 @@ export default function WordForm() {
         {/* French examples only */}
         <div className="card p-5 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-slate-800">Exemples (français)</h2>
+            <h2 className="font-semibold text-slate-800">{t('examplesFr')}</h2>
             <button type="button" onClick={addExample} className="btn-ghost text-sm">
               <Plus className="w-4 h-4" /> Ajouter
             </button>
           </div>
           {form.examples.length === 0 && (
-            <p className="text-sm text-slate-400">Aucun exemple. Cliquez sur Ajouter.</p>
+            <p className="text-sm text-slate-400">{t('examplesFr')}</p>
           )}
           {form.examples.map((ex, i) => (
             <div key={i} className="flex gap-2">
@@ -468,9 +470,9 @@ export default function WordForm() {
         {form.category === 'verbe' && form.conjugations && (
           <div className="card p-5 space-y-3">
             <div>
-              <h2 className="font-semibold text-slate-800">Conjugaison (optionnel)</h2>
+              <h2 className="font-semibold text-slate-800">{t('conjugations')}</h2>
               <p className="text-sm text-slate-500 mt-1">
-                Ouvrez un temps pour remplir les personnes. Tout est facultatif.
+                {t('conjugationsHint')}
               </p>
             </div>
             <div className="space-y-2">
@@ -497,7 +499,7 @@ export default function WordForm() {
 
         {/* Relations */}
         <div className="card p-5 space-y-4">
-          <h2 className="font-semibold text-slate-800">Relations & étiquettes</h2>
+          <h2 className="font-semibold text-slate-800">{t('relations')}</h2>
           {(
             [
               { label: 'Collocations', key: 'collocations' as const, input: collocInput, setInput: setCollocInput },
@@ -547,7 +549,7 @@ export default function WordForm() {
             </div>
           ))}
           <div>
-            <label className="label">Étiquettes</label>
+            <label className="label">{t('tags')}</label>
             <div className="flex gap-2">
               <input
                 className="input"
@@ -583,7 +585,7 @@ export default function WordForm() {
             </div>
           </div>
           <div>
-            <label className="label">Notes</label>
+            <label className="label">{t('notes')}</label>
             <textarea
               className="input"
               rows={2}
@@ -599,7 +601,7 @@ export default function WordForm() {
           </Link>
           <button type="submit" className="btn-primary" disabled={saving}>
             <Save className="w-4 h-4" />
-            {saving ? 'Enregistrement…' : 'Enregistrer'}
+            {saving ? t('saving') : t('save')}
           </button>
         </div>
       </form>

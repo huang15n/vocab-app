@@ -10,32 +10,31 @@ import {
 import { useLang } from '../context/LanguageContext'
 import { wordText, wordExample } from '../context/LanguageContext'
 
-const statusLabels: Record<string, string> = {
-  nouveau: 'Nouveau',
-  en_cours: 'En cours',
-  appris: 'Appris',
-  a_reviser: 'À réviser',
-}
-
-const categoryLabels: Record<string, string> = {
-  verbe: 'Verbe',
-  nom: 'Nom',
-  adjectif: 'Adjectif',
-  expression: 'Expression',
-  adverbe: 'Adverbe',
-  autre: 'Autre',
-}
-
-const genderLabels: Record<string, string> = {
-  masculin: 'Masculin',
-  feminin: 'Féminin',
-  invariable: 'Invariable',
-}
+// labels via t() below
 
 export default function WordDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { lang, primary, t } = useLang()
+  const statusLabels: Record<string, string> = {
+    nouveau: t('statusNew'),
+    en_cours: t('statusLearning'),
+    appris: t('statusLearned'),
+    a_reviser: t('statusReview'),
+  }
+  const categoryLabels: Record<string, string> = {
+    verbe: t('verb'),
+    nom: t('noun'),
+    adjectif: t('adjective'),
+    expression: t('expression'),
+    adverbe: t('adverb'),
+    autre: t('other'),
+  }
+  const genderLabels: Record<string, string> = {
+    masculin: t('masculine'),
+    feminin: t('feminine'),
+    invariable: t('invariable'),
+  }
   const [word, setWord] = useState<Word | null>(null)
   const [loading, setLoading] = useState(true)
   const [openTenses, setOpenTenses] = useState<Record<string, boolean>>({})
@@ -55,7 +54,7 @@ export default function WordDetail() {
     navigate('/words')
   }
 
-  if (loading) return <div className="text-center py-20 text-slate-400">Chargement…</div>
+  if (loading) return <div className="text-center py-20 text-slate-400">{t('loading')}</div>
   if (!word) return null
 
   const examples = (word.examples || []).map((e: any) =>
@@ -97,7 +96,7 @@ export default function WordDetail() {
         <div className="flex gap-2">
           <Link to={`/words/${word.id}/edit`} className="btn-secondary">
             <Edit className="w-4 h-4" />
-            Modifier
+            {t('editWord')}
           </Link>
           <button onClick={handleDelete} className="btn-danger">
             <Trash2 className="w-4 h-4" />
@@ -133,7 +132,7 @@ export default function WordDetail() {
         </div>
         {word.definition && (
           <div className="mt-4 pt-4 border-t border-slate-100">
-            <p className="text-xs text-slate-500 uppercase tracking-wide">Définition</p>
+            <p className="text-xs text-slate-500 uppercase tracking-wide">{t('definition')}</p>
             <p className="text-slate-700 mt-1">{word.definition}</p>
           </div>
         )}
@@ -142,7 +141,7 @@ export default function WordDetail() {
       {/* French examples */}
       {examples.length > 0 && (
         <div className="card p-5">
-          <h2 className="font-semibold text-slate-800 mb-3">Exemples (français)</h2>
+          <h2 className="font-semibold text-slate-800 mb-3">{t('examplesFr')}</h2>
           <ul className="space-y-2">
             {examples.map((ex, i) => (
               <li key={i} className="border-l-2 border-primary-300 pl-3 text-slate-900">
@@ -157,7 +156,7 @@ export default function WordDetail() {
       <div className="grid sm:grid-cols-3 gap-4">
         {word.collocations?.length > 0 && (
           <div className="card p-4">
-            <h3 className="text-sm font-semibold text-slate-700 mb-2">Collocations</h3>
+            <h3 className="text-sm font-semibold text-slate-700 mb-2">{t('collocations')}</h3>
             <ul className="space-y-1">
               {word.collocations.map((c, i) => (
                 <li key={i} className="text-sm text-slate-600">• {c}</li>
@@ -167,13 +166,13 @@ export default function WordDetail() {
         )}
         {word.synonyms?.length > 0 && (
           <div className="card p-4">
-            <h3 className="text-sm font-semibold text-slate-700 mb-2">Synonymes</h3>
+            <h3 className="text-sm font-semibold text-slate-700 mb-2">{t('synonyms')}</h3>
             <p className="text-sm text-slate-600">{word.synonyms.join(', ')}</p>
           </div>
         )}
         {word.antonyms?.length > 0 && (
           <div className="card p-4">
-            <h3 className="text-sm font-semibold text-slate-700 mb-2">Antonymes</h3>
+            <h3 className="text-sm font-semibold text-slate-700 mb-2">{t('antonyms')}</h3>
             <p className="text-sm text-slate-600">{word.antonyms.join(', ')}</p>
           </div>
         )}
@@ -192,7 +191,7 @@ export default function WordDetail() {
       {/* Conjugations */}
       {word.category === 'verbe' && filledTenses.length > 0 && (
         <div className="card p-5 space-y-2">
-          <h2 className="font-semibold text-slate-800 mb-2">Conjugaison</h2>
+          <h2 className="font-semibold text-slate-800 mb-2">{t('conjugations')}</h2>
           {filledTenses.map(({ key, label }) => {
             const forms = word.conjugations![key as keyof Conjugations] as PersonForms | Record<string, string>
             const open = openTenses[key] ?? false
@@ -228,7 +227,7 @@ export default function WordDetail() {
 
       {word.notes && (
         <div className="card p-4 bg-amber-50 border-amber-200">
-          <h3 className="text-sm font-semibold text-amber-800 mb-1">Notes</h3>
+          <h3 className="text-sm font-semibold text-amber-800 mb-1">{t('notes')}</h3>
           <p className="text-sm text-amber-900">{word.notes}</p>
         </div>
       )}

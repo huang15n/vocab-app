@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Upload, ArrowLeft, FileSpreadsheet, CheckCircle } from 'lucide-react'
 import { api } from '../api/words'
+import { useLang } from '../context/LanguageContext'
 import type { StudySet } from '../types'
 
 export default function ImportPage() {
+  const { t } = useLang()
   const [file, setFile] = useState<File | null>(null)
   const [sets, setSets] = useState<StudySet[]>([])
   const [setId, setSetId] = useState('')
@@ -39,24 +41,15 @@ export default function ImportPage() {
         <Link to="/words" className="btn-ghost">
           <ArrowLeft className="w-4 h-4" />
         </Link>
-        <h1 className="text-2xl font-bold">Import CSV / Excel</h1>
+        <h1 className="text-2xl font-bold">{t('importTitle')}</h1>
       </div>
 
       <div className="card p-5 space-y-4">
-        <p className="text-sm text-slate-600">
-          Importez des mots en masse. Colonnes reconnues :{' '}
-          <code className="text-xs bg-slate-100 px-1 rounded">word / mot</code>,{' '}
-          <code className="text-xs bg-slate-100 px-1 rounded">en / english</code>,{' '}
-          <code className="text-xs bg-slate-100 px-1 rounded">es</code>,{' '}
-          <code className="text-xs bg-slate-100 px-1 rounded">ipa</code>,{' '}
-          <code className="text-xs bg-slate-100 px-1 rounded">category</code>,{' '}
-          <code className="text-xs bg-slate-100 px-1 rounded">tags</code>,{' '}
-          <code className="text-xs bg-slate-100 px-1 rounded">cefr</code>, etc.
-        </p>
+        <p className="text-sm text-slate-600">{t('importHint')}</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="label">Fichier (.csv, .xlsx, .xls)</label>
+            <label className="label">{t('chooseFile')}</label>
             <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center hover:border-primary-400 transition-colors">
               <FileSpreadsheet className="w-10 h-10 text-slate-400 mx-auto mb-2" />
               <input
@@ -70,9 +63,9 @@ export default function ImportPage() {
           </div>
 
           <div>
-            <label className="label">Ajouter à un ensemble (optionnel)</label>
+            <label className="label">{t('addToSet')}</label>
             <select className="input" value={setId} onChange={(e) => setSetId(e.target.value)}>
-              <option value="">— Aucun —</option>
+              <option value="">{t('none')}</option>
               {sets.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name} ({s.wordCount ?? s.wordIds?.length ?? 0})
@@ -91,27 +84,23 @@ export default function ImportPage() {
               <CheckCircle className="w-5 h-5 shrink-0 mt-0.5" />
               <div>
                 <p className="font-medium">{result.message}</p>
-                <p>
-                  {result.created} créé(s) · {result.skipped} ignoré(s)
-                </p>
               </div>
             </div>
           )}
 
           <button type="submit" className="btn-primary w-full" disabled={!file || loading}>
             <Upload className="w-4 h-4" />
-            {loading ? 'Import en cours…' : 'Importer'}
+            {loading ? t('importing') : t('importBtn')}
           </button>
         </form>
       </div>
 
       <div className="card p-4 text-sm text-slate-600">
-        <p className="font-medium text-slate-800 mb-2">Exemple de CSV</p>
+        <p className="font-medium text-slate-800 mb-2">CSV</p>
         <pre className="bg-slate-50 p-3 rounded-lg overflow-x-auto text-xs">
-{`word,en,es,ipa,category,tags,cefr
-poser,to ask; to put,poner,/po.ze/,verbe,communication,A2
-maison,house,casa,/mɛ.zɔ̃/,nom,quotidien,A1
-beau,beautiful,hermoso,/bo/,adjectif,description,A1`}
+{`fr,en,es,ipa,category,gender,tags,cefr
+poser,to ask,hacer una pregunta,/po.ze/,verbe,,communication,A2
+maison,house,casa,/mɛ.zɔ̃/,nom,feminin,quotidien,A1`}
         </pre>
       </div>
     </div>

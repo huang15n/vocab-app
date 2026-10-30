@@ -4,7 +4,6 @@ import {
   BookOpen,
   CheckCircle,
   Clock,
-  AlertCircle,
   Plus,
   Database,
   Layers,
@@ -13,31 +12,33 @@ import {
 } from 'lucide-react'
 import { api } from '../api/words'
 import { useAuth } from '../context/AuthContext'
-import type { Stats, StudySet } from '../types'
-
-const statusLabels: Record<string, string> = {
-  nouveau: 'Nouveau',
-  en_cours: 'En cours',
-  appris: 'Appris',
-  a_reviser: 'À réviser',
-}
-
-const categoryLabels: Record<string, string> = {
-  verbe: 'Verbes',
-  nom: 'Noms',
-  adjectif: 'Adjectifs',
-  expression: 'Expressions',
-  adverbe: 'Adverbes',
-  autre: 'Autres',
-}
+import { useLang } from '../context/LanguageContext'
+import type { Stats, StudySet, Category, LearningStatus } from '../types'
 
 export default function Dashboard() {
   const { user } = useAuth()
+  const { t } = useLang()
   const [stats, setStats] = useState<Stats | null>(null)
   const [sets, setSets] = useState<StudySet[]>([])
   const [loading, setLoading] = useState(true)
   const [seeding, setSeeding] = useState(false)
   const [message, setMessage] = useState('')
+
+  const statusLabels: Record<string, string> = {
+    nouveau: t('statusNew'),
+    en_cours: t('statusLearning'),
+    appris: t('statusLearned'),
+    a_reviser: t('statusReview'),
+  }
+
+  const categoryLabels: Record<string, string> = {
+    verbe: t('verb'),
+    nom: t('noun'),
+    adjectif: t('adjective'),
+    expression: t('expression'),
+    adverbe: t('adverb'),
+    autre: t('other'),
+  }
 
   const load = () => {
     Promise.all([api.getStats(), api.getSets()])
@@ -68,28 +69,30 @@ export default function Dashboard() {
   }
 
   if (loading) {
-    return <div className="text-center py-20 text-slate-500">Chargement…</div>
+    return <div className="text-center py-20 text-slate-500">{t('loading')}</div>
   }
 
   return (
     <div className="space-y-8">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Bonjour, {user?.name} 👋</h1>
-          <p className="text-slate-500 mt-1">Votre espace vocabulaire français</p>
+          <h1 className="text-2xl font-bold text-slate-900">
+            {t('hello')}, {user?.name} 👋
+          </h1>
+          <p className="text-slate-500 mt-1">{t('yourSpace')}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button onClick={() => handleSeed(false)} disabled={seeding} className="btn-secondary text-sm">
             <Database className="w-4 h-4" />
-            Exemples
+            {t('loadExamples')}
           </button>
           <Link to="/import" className="btn-secondary text-sm">
             <Upload className="w-4 h-4" />
-            Import
+            {t('import')}
           </Link>
           <Link to="/words/new" className="btn-primary text-sm">
             <Plus className="w-4 h-4" />
-            Nouveau mot
+            {t('newWord')}
           </Link>
         </div>
       </div>
@@ -107,7 +110,7 @@ export default function Dashboard() {
               <BookOpen className="w-5 h-5" />
             </div>
             <div>
-              <p className="text-sm text-slate-500">Mots</p>
+              <p className="text-sm text-slate-500">{t('totalWords')}</p>
               <p className="text-2xl font-bold">{stats?.total ?? 0}</p>
             </div>
           </div>
@@ -118,7 +121,7 @@ export default function Dashboard() {
               <Clock className="w-5 h-5" />
             </div>
             <div>
-              <p className="text-sm text-slate-500">À réviser</p>
+              <p className="text-sm text-slate-500">{t('due')}</p>
               <p className="text-2xl font-bold">{stats?.dueCount ?? 0}</p>
             </div>
           </div>
@@ -129,7 +132,7 @@ export default function Dashboard() {
               <CheckCircle className="w-5 h-5" />
             </div>
             <div>
-              <p className="text-sm text-slate-500">Maîtrisés</p>
+              <p className="text-sm text-slate-500">{t('mastered')}</p>
               <p className="text-2xl font-bold">{stats?.mastered ?? 0}</p>
             </div>
           </div>
@@ -140,17 +143,16 @@ export default function Dashboard() {
               <Layers className="w-5 h-5" />
             </div>
             <div>
-              <p className="text-sm text-slate-500">Ensembles</p>
+              <p className="text-sm text-slate-500">{t('sets')}</p>
               <p className="text-2xl font-bold">{stats?.setsCount ?? 0}</p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Quick study */}
       {sets.length > 0 && (
         <div className="card p-5">
-          <h2 className="font-semibold text-slate-800 mb-3">Étudier maintenant</h2>
+          <h2 className="font-semibold text-slate-800 mb-3">{t('studyNow')}</h2>
           <div className="grid sm:grid-cols-2 gap-3">
             {sets.slice(0, 4).map((s) => (
               <div
@@ -159,28 +161,30 @@ export default function Dashboard() {
               >
                 <div>
                   <p className="font-medium text-slate-800">{s.name}</p>
-                  <p className="text-xs text-slate-400">{s.wordCount ?? 0} mots</p>
+                  <p className="text-xs text-slate-400">
+                    {s.wordCount ?? 0} {t('wordsCount')}
+                  </p>
                 </div>
                 <div className="flex gap-1">
                   <Link to={`/study/${s.id}/flashcards`} className="btn-primary text-xs py-1.5">
-                    <Play className="w-3.5 h-3.5" /> Cartes
+                    <Play className="w-3.5 h-3.5" /> {t('cards')}
                   </Link>
                   <Link to={`/study/${s.id}/quiz`} className="btn-secondary text-xs py-1.5">
-                    Quiz
+                    {t('quiz')}
                   </Link>
                 </div>
               </div>
             ))}
           </div>
           <Link to="/sets" className="text-sm text-primary-600 mt-3 inline-block hover:underline">
-            Voir tous les ensembles →
+            {t('sets')} →
           </Link>
         </div>
       )}
 
       <div className="grid md:grid-cols-2 gap-6">
         <div className="card p-5">
-          <h2 className="font-semibold text-slate-800 mb-4">Par catégorie</h2>
+          <h2 className="font-semibold text-slate-800 mb-4">{t('byCategory')}</h2>
           {stats && Object.keys(stats.byCategory || {}).length > 0 ? (
             <ul className="space-y-3">
               {Object.entries(stats.byCategory)
@@ -201,12 +205,12 @@ export default function Dashboard() {
                 ))}
             </ul>
           ) : (
-            <p className="text-slate-400 text-sm">Aucun mot encore.</p>
+            <p className="text-slate-400 text-sm">{t('noWords')}</p>
           )}
         </div>
 
         <div className="card p-5">
-          <h2 className="font-semibold text-slate-800 mb-4">Par statut</h2>
+          <h2 className="font-semibold text-slate-800 mb-4">{t('byStatus')}</h2>
           {stats && Object.keys(stats.byStatus || {}).length > 0 ? (
             <ul className="space-y-3">
               {Object.entries(stats.byStatus)
@@ -219,7 +223,7 @@ export default function Dashboard() {
                 ))}
             </ul>
           ) : (
-            <p className="text-slate-400 text-sm">Aucun mot encore.</p>
+            <p className="text-slate-400 text-sm">{t('noWords')}</p>
           )}
         </div>
       </div>
@@ -227,19 +231,16 @@ export default function Dashboard() {
       {(stats?.total ?? 0) === 0 && (
         <div className="card p-8 text-center">
           <BookOpen className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-          <h3 className="font-semibold text-slate-700">Commencez votre vocabulaire</h3>
-          <p className="text-slate-500 mt-1 mb-4">
-            Chargez les exemples, importez un CSV/Excel, ou ajoutez un mot manuellement.
-          </p>
-          <div className="flex justify-center flex-wrap gap-3">
+          <h3 className="font-semibold text-slate-700">{t('addFirst')}</h3>
+          <div className="flex justify-center flex-wrap gap-3 mt-4">
             <button onClick={() => handleSeed(true)} className="btn-secondary" disabled={seeding}>
-              Charger exemples
+              {t('loadExamples')}
             </button>
             <Link to="/import" className="btn-secondary">
-              Importer CSV/Excel
+              {t('import')}
             </Link>
             <Link to="/words/new" className="btn-primary">
-              Ajouter un mot
+              {t('newWord')}
             </Link>
           </div>
         </div>

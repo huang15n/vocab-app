@@ -2,9 +2,11 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { BookOpen } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useLang } from '../context/LanguageContext'
 
 export default function Register() {
   const { register } = useAuth()
+  const { t, lang, setLang } = useLang()
   const navigate = useNavigate()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -20,7 +22,7 @@ export default function Register() {
       await register(email, password, name)
       navigate('/')
     } catch (err: any) {
-      setError(err.message || "Erreur d'inscription")
+      setError(err.message || 'Error')
     } finally {
       setLoading(false)
     }
@@ -29,12 +31,25 @@ export default function Register() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-md">
+        <div className="flex justify-center gap-1 mb-4">
+          {(['fr', 'en', 'es'] as const).map((l) => (
+            <button
+              key={l}
+              type="button"
+              onClick={() => setLang(l)}
+              className={`px-2.5 py-1 rounded-md text-xs font-semibold uppercase ${
+                lang === l ? 'bg-primary-600 text-white' : 'text-slate-500 hover:bg-slate-100'
+              }`}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 text-primary-700 font-semibold text-xl">
             <BookOpen className="w-7 h-7" />
-            Vocabulaire FR
+            {t('appName')}
           </div>
-          <p className="text-slate-500 mt-2">Créez votre compte</p>
         </div>
         <form onSubmit={handleSubmit} className="card p-6 space-y-4">
           {error && (
@@ -43,16 +58,11 @@ export default function Register() {
             </div>
           )}
           <div>
-            <label className="label">Prénom / Nom</label>
-            <input
-              className="input"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Eddie"
-            />
+            <label className="label">{t('name')}</label>
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
           <div>
-            <label className="label">Email</label>
+            <label className="label">{t('email')}</label>
             <input
               type="email"
               className="input"
@@ -62,7 +72,7 @@ export default function Register() {
             />
           </div>
           <div>
-            <label className="label">Mot de passe (min. 6 caractères)</label>
+            <label className="label">{t('password')}</label>
             <input
               type="password"
               className="input"
@@ -73,12 +83,11 @@ export default function Register() {
             />
           </div>
           <button type="submit" className="btn-primary w-full" disabled={loading}>
-            {loading ? 'Création…' : "S'inscrire"}
+            {loading ? '…' : t('register')}
           </button>
           <p className="text-center text-sm text-slate-500">
-            Déjà un compte ?{' '}
             <Link to="/login" className="text-primary-600 font-medium hover:underline">
-              Se connecter
+              {t('login')}
             </Link>
           </p>
         </form>
