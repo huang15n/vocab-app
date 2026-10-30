@@ -198,7 +198,15 @@ export default function WordForm() {
         navigate(`/words/${created.id}`)
       }
     } catch (err: any) {
-      setError(err.message || 'Error')
+      const msg = err.message || 'Error'
+      if (err.duplicates?.length || err.error === 'duplicate') {
+        setError(
+          (err.message || 'Duplicate') +
+            (err.duplicates?.length ? ': ' + err.duplicates.join(', ') : '')
+        )
+      } else {
+        setError(msg)
+      }
     } finally {
       setSaving(false)
     }

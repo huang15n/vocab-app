@@ -172,6 +172,26 @@ function auth(req, res, next) {
   }
 }
 
+
+function normalizeKey(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+function findDuplicate(lang, userId, word, excludeId) {
+  const key = normalizeKey(word);
+  if (!key) return null;
+  return getWords(lang).find(
+    (w) =>
+      w.userId === userId &&
+      w.id !== excludeId &&
+      normalizeKey(w.word) === key
+  );
+}
+
 function parseLang(req) {
   const l = (req.params.lang || req.query.lang || 'fr').toLowerCase();
   return LANGS.includes(l) ? l : 'fr';
@@ -253,6 +273,15 @@ app.post('/api/:lang/words', auth, (req, res) => {
   if (!entry.category) {
     return res.status(400).json({ error: 'Catégorie requise' });
   }
+  const dup = findDuplicate(lang, req.user.id, entry.word);
+  if (dup) {
+    return res.status(409).json({
+      error: 'duplicate',
+      message: `Ce mot existe déjà : « ${dup.word} »`,
+      existing: { id: dup.id, word: dup.word },
+      duplicates: [dup.word],
+    });
+  }
   entry.id = db.nextWordId[lang]++;
   entry.userId = req.user.id;
   entry.createdAt = new Date().toISOString();
@@ -272,6 +301,15 @@ app.put('/api/:lang/words/:id', auth, (req, res) => {
   merged.userId = req.user.id;
   merged.createdAt = list[idx].createdAt;
   merged.updatedAt = new Date().toISOString();
+  const dup = findDuplicate(lang, req.user.id, merged.word, merged.id);
+  if (dup) {
+    return res.status(409).json({
+      error: 'duplicate',
+      message: `Ce mot existe déjà : « ${dup.word} »`,
+      existing: { id: dup.id, word: dup.word },
+      duplicates: [dup.word],
+    });
+  }
   list[idx] = merged;
   saveDb();
   res.json({ ...merged, lang });
@@ -349,6 +387,8 @@ app.post('/api/:lang/import', auth, upload.single('file'), (req, res) => {
   };
 
   const created = [];
+  const duplicates = [];
+  const seenInFile = new Set();
   for (const row of rows) {
     const word =
       lang === 'en'
@@ -387,11 +427,28 @@ app.post('/api/:lang/import', auth, upload.single('file'), (req, res) => {
     entry.userId = req.user.id;
     entry.createdAt = new Date().toISOString();
     entry.updatedAt = entry.createdAt;
+    const dup = findDuplicate(lang, req.user.id, entry.word);
+    if (dup) {
+      duplicates.push(entry.word);
+      continue;
+    }
+    // also skip duplicates within the same file
+    if (seenInFile.has(normalizeKey(entry.word))) {
+      duplicates.push(entry.word);
+      continue;
+    }
+    seenInFile.add(normalizeKey(entry.word));
     getWords(lang).push(entry);
     created.push(entry);
   }
   saveDb();
-  res.json({ message: `${created.length} importé(s)`, created: created.length, skipped: rows.length - created.length });
+  res.json({
+    message: `${created.length} importé(s)`,
+    created: created.length,
+    skipped: rows.length - created.length,
+    duplicates: [...new Set(duplicates)],
+    duplicateCount: duplicates.length,
+  });
 });
 
 // ---------- Sets (per language) ----------
@@ -826,6 +883,108 @@ function seedFor(lang, userId) {
     },
   ];
 }
+
+
+// ---------- Export CSV / Excel ----------
+function exportRows(lang, userId) {
+  const words = getWords(lang).filter((w) => w.userId === userId);
+  if (lang === 'en') {
+    return words.map((w) => ({
+      word: w.word || '',
+      french: w.glossFr || '',
+      spanish: w.glossEs || '',
+      ipa: w.ipa || '',
+      part_of_speech: w.category || '',
+      ielts_level: w.level || '',
+      definition: w.definition || '',
+      examples: (w.examples || []).join('; '),
+      collocations: (w.collocations || []).join('; '),
+      synonyms: (w.synonyms || []).join('; '),
+      antonyms: (w.antonyms || []).join('; '),
+      tags: (w.tags || []).join('; '),
+      learning_status: w.learningStatus || '',
+      notes: w.notes || '',
+    }));
+  }
+  if (lang === 'es') {
+    return words.map((w) => ({
+      palabra: w.word || '',
+      frances: w.glossFr || '',
+      ingles: w.glossEn || '',
+      ipa: w.ipa || '',
+      categoria: w.category || '',
+      genero: w.gender || '',
+      nivel_mcer: w.level || '',
+      definicion: w.definition || '',
+      ejemplos: (w.examples || []).join('; '),
+      colocaciones: (w.collocations || []).join('; '),
+      sinonimos: (w.synonyms || []).join('; '),
+      antonimos: (w.antonyms || []).join('; '),
+      etiquetas: (w.tags || []).join('; '),
+      estado: w.learningStatus || '',
+      notas: w.notes || '',
+    }));
+  }
+  // fr
+  return words.map((w) => ({
+    mot: w.word || '',
+    anglais: w.glossEn || '',
+    espagnol: w.glossEs || '',
+    ipa: w.ipa || '',
+    categorie: w.category || '',
+    genre: w.gender || '',
+    niveau_cecr: w.level || '',
+    definition: w.definition || '',
+    exemples: (w.examples || []).join('; '),
+    collocations: (w.collocations || []).join('; '),
+    synonymes: (w.synonyms || []).join('; '),
+    antonymes: (w.antonyms || []).join('; '),
+    etiquettes: (w.tags || []).join('; '),
+    statut: w.learningStatus || '',
+    notes: w.notes || '',
+  }));
+}
+
+function toCsv(rows) {
+  if (!rows.length) return '';
+  const keys = Object.keys(rows[0]);
+  const esc = (v) => {
+    const s = String(v ?? '');
+    if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  };
+  const lines = [keys.join(',')];
+  for (const row of rows) {
+    lines.push(keys.map((k) => esc(row[k])).join(','));
+  }
+  return lines.join('\n');
+}
+
+app.get('/api/:lang/export', auth, (req, res) => {
+  const lang = parseLang(req);
+  const format = (req.query.format || 'csv').toLowerCase();
+  const rows = exportRows(lang, req.user.id);
+  const stamp = new Date().toISOString().slice(0, 10);
+  const base = `vocab-${lang}-${stamp}`;
+
+  if (format === 'xlsx' || format === 'excel') {
+    const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{}]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, lang.toUpperCase());
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${base}.xlsx"`);
+    return res.send(Buffer.from(buf));
+  }
+
+  const csv = toCsv(rows);
+  // BOM for Excel UTF-8
+  const bom = '\uFEFF';
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${base}.csv"`);
+  res.send(bom + csv);
+});
+
 
 app.get('/api/health', (req, res) => {
   res.json({

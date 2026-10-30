@@ -77,14 +77,19 @@ export default function ImportPage() {
   const [sets, setSets] = useState<StudySet[]>([])
   const [setId, setSetId] = useState('')
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<{ message: string; created: number; skipped: number } | null>(null)
+  const [result, setResult] = useState<{ message: string; created: number; skipped: number; duplicates?: string[]; duplicateCount?: number } | null>(null)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
+  const [exportLang, setExportLang] = useState<Lang>(uiLang)
+  const [exportFormat, setExportFormat] = useState<'csv' | 'xlsx'>('csv')
+  const [exporting, setExporting] = useState(false)
+  const [exportMsg, setExportMsg] = useState('')
 
   const spec = IMPORT_SPECS[importLang]
 
   useEffect(() => {
     setImportLang(uiLang)
+    setExportLang(uiLang)
   }, [uiLang])
 
   useEffect(() => {
@@ -121,7 +126,33 @@ export default function ImportPage() {
     }
   }
 
-  const labelFor = (l: Lang) => spec.label[uiLang] // not used for options
+  const handleExport = async () => {
+    setExporting(true)
+    setExportMsg('')
+    try {
+      const r = await api.exportWords(exportLang, exportFormat)
+      setExportMsg(
+        uiLang === 'en'
+          ? `Downloaded ${r.filename}`
+          : uiLang === 'es'
+            ? `Descargado ${r.filename}`
+            : `Téléchargé ${r.filename}`
+      )
+    } catch (e: any) {
+      setExportMsg(e.message || 'Error')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const exportColHint =
+    exportLang === 'en'
+      ? 'word, french, spanish, ipa, part_of_speech, ielts_level, definition, examples, collocations, synonyms, antonyms, tags, learning_status, notes'
+      : exportLang === 'es'
+        ? 'palabra, frances, ingles, ipa, categoria, genero, nivel_mcer, definicion, ejemplos, colocaciones, sinonimos, antonimos, etiquetas, estado, notas'
+        : 'mot, anglais, espagnol, ipa, categorie, genre, niveau_cecr, definition, exemples, collocations, synonymes, antonymes, etiquettes, statut, notes'
+
+  const labelFor = (l: Lang) => spec.label[uiLang]
   const optionLabel = (l: Lang) => IMPORT_SPECS[l].label[uiLang]
 
   return (
@@ -266,14 +297,30 @@ export default function ImportPage() {
             </div>
           )}
           {result && (
-            <div className="rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 px-3 py-2 text-sm flex items-start gap-2">
-              <CheckCircle className="w-5 h-5 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-medium">{result.message}</p>
-                <p className="text-xs mt-1">
-                  → {spec.table} · {result.created} · {result.skipped} skipped
-                </p>
+            <div className="space-y-2">
+              <div className="rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 px-3 py-2 text-sm flex items-start gap-2">
+                <CheckCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium">{result.message}</p>
+                  <p className="text-xs mt-1">
+                    → {spec.table} · {result.created} created · {result.skipped} skipped
+                  </p>
+                </div>
               </div>
+              {result.duplicates && result.duplicates.length > 0 && (
+                <div className="rounded-lg bg-amber-50 border border-amber-200 text-amber-900 px-3 py-2 text-sm">
+                  <p className="font-medium">
+                    {uiLang === 'en'
+                      ? `Duplicates skipped (${result.duplicates.length})`
+                      : uiLang === 'es'
+                        ? `Duplicados omitidos (${result.duplicates.length})`
+                        : `Doublons ignorés (${result.duplicates.length})`}
+                  </p>
+                  <p className="mt-1 text-xs break-words">
+                    {result.duplicates.join(', ')}
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -285,6 +332,84 @@ export default function ImportPage() {
           </button>
         </form>
       </div>
+
+      {/* ========== EXPORT ========== */}
+      <div className="border-t border-slate-200 pt-6">
+        <h2 className="text-xl font-bold text-slate-900 mb-4">
+          {uiLang === 'en' ? 'Export' : uiLang === 'es' ? 'Exportar' : 'Exporter'}
+        </h2>
+        <div className="card p-5 space-y-4">
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label className="label">
+                {uiLang === 'en'
+                  ? 'Language to export *'
+                  : uiLang === 'es'
+                    ? 'Idioma a exportar *'
+                    : 'Langue à exporter *'}
+              </label>
+              <select
+                className="input"
+                value={exportLang}
+                onChange={(e) => setExportLang(e.target.value as Lang)}
+              >
+                <option value="fr">{optionLabel('fr')}</option>
+                <option value="en">{optionLabel('en')}</option>
+                <option value="es">{optionLabel('es')}</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">
+                {uiLang === 'en' ? 'Format' : uiLang === 'es' ? 'Formato' : 'Format'}
+              </label>
+              <select
+                className="input"
+                value={exportFormat}
+                onChange={(e) => setExportFormat(e.target.value as 'csv' | 'xlsx')}
+              >
+                <option value="csv">CSV (.csv)</option>
+                <option value="xlsx">Excel (.xlsx)</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <p className="text-xs text-slate-500 uppercase tracking-wide mb-1">
+              {uiLang === 'en'
+                ? 'Column names in file'
+                : uiLang === 'es'
+                  ? 'Nombres de columnas en el archivo'
+                  : 'Noms des colonnes dans le fichier'}
+            </p>
+            <code className="block text-xs bg-slate-50 border border-slate-200 rounded-lg p-3 break-all">
+              {exportColHint}
+            </code>
+          </div>
+          {exportMsg && (
+            <div className="rounded-lg bg-slate-50 border border-slate-200 text-slate-700 px-3 py-2 text-sm">
+              {exportMsg}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={exporting}
+            className="btn-primary w-full"
+          >
+            {exporting
+              ? uiLang === 'en'
+                ? 'Exporting…'
+                : uiLang === 'es'
+                  ? 'Exportando…'
+                  : 'Export…'
+              : uiLang === 'en'
+                ? `Download ${exportLang.toUpperCase()} (${exportFormat})`
+                : uiLang === 'es'
+                  ? `Descargar ${exportLang.toUpperCase()} (${exportFormat})`
+                  : `Télécharger ${exportLang.toUpperCase()} (${exportFormat})`}
+          </button>
+        </div>
+      </div>
+
     </div>
   )
 }

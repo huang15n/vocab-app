@@ -66,6 +66,30 @@ export const api = {
     const qs = lang ? `?lang=${lang}` : ''
     return request<Stats & { byLang?: Record<string, number> }>(`/stats${qs}`)
   },
+  
+  exportWords: async (lang: string, format: 'csv' | 'xlsx' = 'csv') => {
+    const { getToken } = await import('./client')
+    const token = getToken()
+    const res = await fetch(`/api/${lang}/export?format=${format}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }))
+      throw new Error(err.error || 'Export failed')
+    }
+    const blob = await res.blob()
+    const dispo = res.headers.get('Content-Disposition') || ''
+    const match = dispo.match(/filename="?([^";]+)"?/)
+    const filename = match?.[1] || `vocab-${lang}.${format === 'xlsx' ? 'xlsx' : 'csv'}`
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+    return { filename }
+  },
+
   seed: (lang: string, force = false) =>
     request<{ message: string; count: number; setId: number }>(
       `/seed?lang=${lang}${force ? '&force=true' : ''}`,
