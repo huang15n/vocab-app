@@ -1,21 +1,35 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Plus, Trash2, Save } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, Save, ChevronDown, ChevronRight } from 'lucide-react'
 import { api } from '../api/words'
 import type {
   WordFormData,
   Category,
   LearningStatus,
-  Example,
+  Gender,
   Conjugations,
   PersonForms,
 } from '../types'
+import {
+  CONJUGATION_TENSES_PRIORITY,
+  CONJUGATION_TENSES_LATER,
+} from '../types'
+
+const emptyPerson = (): PersonForms => ({
+  je: '',
+  tu: '',
+  'il/elle/on': '',
+  nous: '',
+  vous: '',
+  'ils/elles': '',
+})
 
 const emptyForm: WordFormData = {
   word: '',
   category: 'nom',
   ipa: '',
-  translations: { en: '', es: '' },
+  gender: '',
+  translations: { en: '', enExample: '', es: '', esExample: '' },
   definition: '',
   examples: [],
   collocations: [],
@@ -28,57 +42,16 @@ const emptyForm: WordFormData = {
   notes: '',
 }
 
-const PERSONS = ['je', 'tu', 'il/elle/on', 'nous', 'vous', 'ils/elles'] as const
-const SUBJ_PERSONS = [
-  'que_je',
-  'que_tu',
-  'qu_il/elle/on',
-  'que_nous',
-  'que_vous',
-  'qu_ils/elles',
-] as const
-
-const DEFAULT_TENSES = [
-  'present',
-  'imparfait',
-  'futur_simple',
-  'passe_compose',
-  'plus_que_parfait',
-  'passe_simple',
-]
-
-function emptyPersonForms(isSubj = false): PersonForms {
-  const keys = isSubj ? SUBJ_PERSONS : PERSONS
-  const o: PersonForms = {}
-  keys.forEach((k) => {
-    (o as any)[k] = ''
+function emptyConjugations(): Conjugations {
+  const c: Conjugations = {}
+  ;[...CONJUGATION_TENSES_PRIORITY, ...CONJUGATION_TENSES_LATER].forEach(({ key }) => {
+    if (key === 'imperatif_present') {
+      ;(c as any)[key] = { tu: '', nous: '', vous: '' }
+    } else {
+      ;(c as any)[key] = emptyPerson()
+    }
   })
-  return o
-}
-
-function defaultConjugations(): Conjugations {
-  return {
-    indicatif: {
-      present: emptyPersonForms(),
-      imparfait: emptyPersonForms(),
-      futur_simple: emptyPersonForms(),
-      passe_compose: emptyPersonForms(),
-      plus_que_parfait: emptyPersonForms(),
-      passe_simple: emptyPersonForms(),
-    },
-    subjonctif: {
-      present: emptyPersonForms(true),
-    },
-    conditionnel: {
-      present: emptyPersonForms(),
-    },
-    imperatif: {
-      present: { tu: '', nous: '', vous: '' },
-    },
-    infinitif: { present: '', passe: '' },
-    participe: { present: '', passe: '' },
-    gerondif: { present: '' },
-  }
+  return c
 }
 
 export default function WordForm() {
@@ -89,32 +62,44 @@ export default function WordForm() {
   const [loading, setLoading] = useState(isEdit)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [activeMode, setActiveMode] = useState('indicatif')
-  const [activeTense, setActiveTense] = useState('present')
   const [tagInput, setTagInput] = useState('')
   const [collocInput, setCollocInput] = useState('')
   const [synInput, setSynInput] = useState('')
   const [antInput, setAntInput] = useState('')
+  const [openTenses, setOpenTenses] = useState<Record<string, boolean>>({ present: true })
+  const [showLater, setShowLater] = useState(false)
 
   useEffect(() => {
     if (!id) return
     api
       .getWord(Number(id))
       .then((w) => {
+        const examples = (w.examples || []).map((e: any) =>
+          typeof e === 'string' ? e : e?.sentence || ''
+        )
         setForm({
           word: w.word,
           category: w.category,
           ipa: w.ipa,
-          translations: { ...w.translations },
+          gender: w.gender || '',
+          translations: {
+            en: w.translations?.en || '',
+            enExample: w.translations?.enExample || '',
+            es: w.translations?.es || '',
+            esExample: w.translations?.esExample || '',
+          },
           definition: w.definition || '',
-          examples: w.examples || [],
+          examples,
           collocations: w.collocations || [],
           synonyms: w.synonyms || [],
           antonyms: w.antonyms || [],
           tags: w.tags || [],
           cefrLevel: w.cefrLevel || '',
           learningStatus: w.learningStatus,
-          conjugations: w.conjugations || (w.category === 'verbe' ? defaultConjugations() : null),
+          conjugations:
+            w.category === 'verbe'
+              ? { ...emptyConjugations(), ...(w.conjugations || {}) }
+              : null,
           notes: w.notes || '',
         })
       })
@@ -126,7 +111,8 @@ export default function WordForm() {
     setForm((prev) => ({
       ...prev,
       category: cat,
-      conjugations: cat === 'verbe' ? prev.conjugations || defaultConjugations() : null,
+      gender: cat === 'nom' ? prev.gender || '' : undefined,
+      conjugations: cat === 'verbe' ? prev.conjugations || emptyConjugations() : null,
     }))
   }
 
@@ -134,24 +120,24 @@ export default function WordForm() {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
-  const updateTranslation = (lang: 'en' | 'es', value: string) => {
+  const updateTranslation = (
+    key: 'en' | 'enExample' | 'es' | 'esExample',
+    value: string
+  ) => {
     setForm((prev) => ({
       ...prev,
-      translations: { ...prev.translations, [lang]: value },
+      translations: { ...prev.translations, [key]: value },
     }))
   }
 
   const addExample = () => {
-    setForm((prev) => ({
-      ...prev,
-      examples: [...prev.examples, { sentence: '', translation: '' }],
-    }))
+    setForm((prev) => ({ ...prev, examples: [...prev.examples, ''] }))
   }
 
-  const updateExample = (idx: number, field: keyof Example, value: string) => {
+  const updateExample = (idx: number, value: string) => {
     setForm((prev) => {
       const examples = [...prev.examples]
-      examples[idx] = { ...examples[idx], [field]: value }
+      examples[idx] = value
       return { ...prev, examples }
     })
   }
@@ -183,31 +169,13 @@ export default function WordForm() {
     }
   }
 
-  const updateConjugation = (
-    mode: string,
-    tense: string,
-    person: string,
-    value: string
-  ) => {
+  const updateConjPerson = (tense: string, person: string, value: string) => {
     setForm((prev) => {
       if (!prev.conjugations) return prev
       const conj = { ...prev.conjugations }
-      const modeData = { ...(conj as any)[mode] }
-      const tenseData = { ...(modeData[tense] || {}) }
+      const tenseData = { ...((conj as any)[tense] || {}) }
       tenseData[person] = value
-      modeData[tense] = tenseData
-      ;(conj as any)[mode] = modeData
-      return { ...prev, conjugations: conj }
-    })
-  }
-
-  const updateSimpleForm = (mode: string, key: string, value: string) => {
-    setForm((prev) => {
-      if (!prev.conjugations) return prev
-      const conj = { ...prev.conjugations }
-      const modeData = { ...(conj as any)[mode] }
-      modeData[key] = value
-      ;(conj as any)[mode] = modeData
+      ;(conj as any)[tense] = tenseData
       return { ...prev, conjugations: conj }
     })
   }
@@ -216,20 +184,39 @@ export default function WordForm() {
     e.preventDefault()
     setError('')
     if (!form.word.trim() || !form.ipa.trim() || !form.translations.en.trim()) {
-      setError('Mot, IPA et traduction anglaise sont obligatoires.')
+      setError('Mot, IPA et mot anglais sont obligatoires.')
       return
     }
     setSaving(true)
     try {
+      // strip empty conjugation cells
+      let conjugations = form.conjugations
+      if (form.category === 'verbe' && conjugations) {
+        const cleaned: Conjugations = {}
+        Object.entries(conjugations).forEach(([tense, forms]) => {
+          if (!forms || typeof forms !== 'object') return
+          const filled = Object.fromEntries(
+            Object.entries(forms).filter(([, v]) => v && String(v).trim())
+          )
+          if (Object.keys(filled).length) (cleaned as any)[tense] = filled
+        })
+        conjugations = Object.keys(cleaned).length ? cleaned : null
+      }
+      const payload = {
+        ...form,
+        examples: form.examples.filter((e) => e.trim()),
+        conjugations: form.category === 'verbe' ? conjugations : null,
+        gender: form.category === 'nom' ? form.gender : undefined,
+      }
       if (isEdit && id) {
-        await api.updateWord(Number(id), form)
+        await api.updateWord(Number(id), payload)
         navigate(`/words/${id}`)
       } else {
-        const created = await api.createWord(form)
+        const created = await api.createWord(payload)
         navigate(`/words/${created.id}`)
       }
     } catch (err: any) {
-      setError(err.message || 'Erreur lors de l\'enregistrement')
+      setError(err.message || "Erreur lors de l'enregistrement")
     } finally {
       setSaving(false)
     }
@@ -237,18 +224,42 @@ export default function WordForm() {
 
   if (loading) return <div className="text-center py-20 text-slate-400">Chargement…</div>
 
-  const modes = form.conjugations
-    ? (Object.keys(form.conjugations) as string[])
-    : []
+  const renderTenseBlock = (key: string, label: string) => {
+    const isImperatif = key === 'imperatif_present'
+    const persons = isImperatif
+      ? (['tu', 'nous', 'vous'] as const)
+      : (['je', 'tu', 'il/elle/on', 'nous', 'vous', 'ils/elles'] as const)
+    const open = openTenses[key]
+    const forms = (form.conjugations as any)?.[key] || {}
 
-  const currentMode = form.conjugations
-    ? (form.conjugations as any)[activeMode]
-    : null
-
-  const isPersonTense =
-    currentMode &&
-    currentMode[activeTense] &&
-    typeof currentMode[activeTense] === 'object'
+    return (
+      <div key={key} className="border border-slate-200 rounded-lg overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setOpenTenses((o) => ({ ...o, [key]: !o[key] }))}
+          className="w-full flex items-center justify-between px-3 py-2.5 bg-slate-50 hover:bg-slate-100 text-left"
+        >
+          <span className="font-medium text-sm text-slate-800">{label}</span>
+          {open ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+        </button>
+        {open && (
+          <div className="p-3 grid sm:grid-cols-2 gap-2">
+            {persons.map((p) => (
+              <div key={p}>
+                <label className="label text-xs capitalize">{p}</label>
+                <input
+                  className="input"
+                  value={forms[p] || ''}
+                  onChange={(e) => updateConjPerson(key, p, e.target.value)}
+                  placeholder={p}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -268,7 +279,7 @@ export default function WordForm() {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Basic info */}
+        {/* Basic */}
         <div className="card p-5 space-y-4">
           <h2 className="font-semibold text-slate-800">Informations de base</h2>
           <div className="grid sm:grid-cols-2 gap-4">
@@ -309,6 +320,21 @@ export default function WordForm() {
                 <option value="autre">Autre</option>
               </select>
             </div>
+            {form.category === 'nom' && (
+              <div>
+                <label className="label">Genre *</label>
+                <select
+                  className="input"
+                  value={form.gender || ''}
+                  onChange={(e) => updateField('gender', e.target.value as Gender)}
+                >
+                  <option value="">— Choisir —</option>
+                  <option value="masculin">Masculin</option>
+                  <option value="feminin">Féminin</option>
+                  <option value="invariable">Invariable</option>
+                </select>
+              </div>
+            )}
             <div>
               <label className="label">Niveau CECR</label>
               <select
@@ -326,30 +352,30 @@ export default function WordForm() {
                 <option value="C2">C2</option>
               </select>
             </div>
-          </div>
-          <div>
-            <label className="label">Statut d'apprentissage *</label>
-            <select
-              className="input"
-              value={form.learningStatus}
-              onChange={(e) =>
-                updateField('learningStatus', e.target.value as LearningStatus)
-              }
-            >
-              <option value="nouveau">Nouveau</option>
-              <option value="en_cours">En cours</option>
-              <option value="appris">Appris</option>
-              <option value="a_reviser">À réviser</option>
-            </select>
+            <div>
+              <label className="label">Statut d'apprentissage *</label>
+              <select
+                className="input"
+                value={form.learningStatus}
+                onChange={(e) =>
+                  updateField('learningStatus', e.target.value as LearningStatus)
+                }
+              >
+                <option value="nouveau">Nouveau</option>
+                <option value="en_cours">En cours</option>
+                <option value="appris">Appris</option>
+                <option value="a_reviser">À réviser</option>
+              </select>
+            </div>
           </div>
         </div>
 
-        {/* Translations */}
+        {/* Translations EN / ES with examples */}
         <div className="card p-5 space-y-4">
           <h2 className="font-semibold text-slate-800">Traductions</h2>
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
-              <label className="label">Anglais *</label>
+              <label className="label">Mot anglais *</label>
               <input
                 className="input"
                 value={form.translations.en}
@@ -359,12 +385,30 @@ export default function WordForm() {
               />
             </div>
             <div>
-              <label className="label">Espagnol</label>
+              <label className="label">Exemple anglais</label>
+              <input
+                className="input"
+                value={form.translations.enExample || ''}
+                onChange={(e) => updateTranslation('enExample', e.target.value)}
+                placeholder="I would like to ask a question."
+              />
+            </div>
+            <div>
+              <label className="label">Mot espagnol</label>
               <input
                 className="input"
                 value={form.translations.es}
                 onChange={(e) => updateTranslation('es', e.target.value)}
                 placeholder="hacer una pregunta; poner"
+              />
+            </div>
+            <div>
+              <label className="label">Exemple espagnol</label>
+              <input
+                className="input"
+                value={form.translations.esExample || ''}
+                onChange={(e) => updateTranslation('esExample', e.target.value)}
+                placeholder="Me gustaría hacer una pregunta."
               />
             </div>
           </div>
@@ -379,34 +423,29 @@ export default function WordForm() {
           </div>
         </div>
 
-        {/* Examples */}
+        {/* French examples only */}
         <div className="card p-5 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-slate-800">Exemples</h2>
+            <h2 className="font-semibold text-slate-800">Exemples (français)</h2>
             <button type="button" onClick={addExample} className="btn-ghost text-sm">
               <Plus className="w-4 h-4" /> Ajouter
             </button>
           </div>
+          {form.examples.length === 0 && (
+            <p className="text-sm text-slate-400">Aucun exemple. Cliquez sur Ajouter.</p>
+          )}
           {form.examples.map((ex, i) => (
-            <div key={i} className="flex gap-2 items-start">
-              <div className="flex-1 space-y-2">
-                <input
-                  className="input"
-                  placeholder="Phrase en français"
-                  value={ex.sentence}
-                  onChange={(e) => updateExample(i, 'sentence', e.target.value)}
-                />
-                <input
-                  className="input"
-                  placeholder="Traduction anglaise"
-                  value={ex.translation}
-                  onChange={(e) => updateExample(i, 'translation', e.target.value)}
-                />
-              </div>
+            <div key={i} className="flex gap-2">
+              <input
+                className="input flex-1"
+                placeholder="Phrase en français"
+                value={ex}
+                onChange={(e) => updateExample(i, e.target.value)}
+              />
               <button
                 type="button"
                 onClick={() => removeExample(i)}
-                className="btn-ghost text-red-500 mt-1"
+                className="btn-ghost text-red-500"
               >
                 <Trash2 className="w-4 h-4" />
               </button>
@@ -414,29 +453,47 @@ export default function WordForm() {
           ))}
         </div>
 
-        {/* Collocations / Syn / Ant / Tags */}
+        {/* Conjugations for verbs */}
+        {form.category === 'verbe' && form.conjugations && (
+          <div className="card p-5 space-y-3">
+            <div>
+              <h2 className="font-semibold text-slate-800">Conjugaison (optionnel)</h2>
+              <p className="text-sm text-slate-500 mt-1">
+                Ouvrez un temps pour remplir les personnes. Tout est facultatif.
+              </p>
+            </div>
+            <div className="space-y-2">
+              {CONJUGATION_TENSES_PRIORITY.map(({ key, label }) =>
+                renderTenseBlock(key, label)
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowLater(!showLater)}
+              className="text-sm text-primary-600 font-medium hover:underline"
+            >
+              {showLater ? 'Masquer' : 'Afficher'} les temps avancés
+            </button>
+            {showLater && (
+              <div className="space-y-2">
+                {CONJUGATION_TENSES_LATER.map(({ key, label }) =>
+                  renderTenseBlock(key, label)
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Relations */}
         <div className="card p-5 space-y-4">
           <h2 className="font-semibold text-slate-800">Relations & étiquettes</h2>
-          {[
-            {
-              label: 'Collocations',
-              key: 'collocations' as const,
-              input: collocInput,
-              setInput: setCollocInput,
-            },
-            {
-              label: 'Synonymes',
-              key: 'synonyms' as const,
-              input: synInput,
-              setInput: setSynInput,
-            },
-            {
-              label: 'Antonymes',
-              key: 'antonyms' as const,
-              input: antInput,
-              setInput: setAntInput,
-            },
-          ].map(({ label, key, input, setInput }) => (
+          {(
+            [
+              { label: 'Collocations', key: 'collocations' as const, input: collocInput, setInput: setCollocInput },
+              { label: 'Synonymes', key: 'synonyms' as const, input: synInput, setInput: setSynInput },
+              { label: 'Antonymes', key: 'antonyms' as const, input: antInput, setInput: setAntInput },
+            ] as const
+          ).map(({ label, key, input, setInput }) => (
             <div key={key}>
               <label className="label">{label}</label>
               <div className="flex gap-2">
@@ -525,126 +582,8 @@ export default function WordForm() {
           </div>
         </div>
 
-        {/* Conjugations - only for verbs */}
-        {form.category === 'verbe' && form.conjugations && (
-          <div className="card p-5 space-y-4">
-            <h2 className="font-semibold text-slate-800">Conjugaison</h2>
-            <p className="text-sm text-slate-500">
-              Remplissez les formes souhaitées. Les champs vides restent vides.
-            </p>
-
-            {/* Mode tabs */}
-            <div className="flex flex-wrap gap-1 border-b border-slate-200 pb-2">
-              {modes.map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => {
-                    setActiveMode(m)
-                    const data = (form.conjugations as any)[m]
-                    if (data) {
-                      const first = Object.keys(data).find(
-                        (k) => typeof data[k] === 'object'
-                      )
-                      if (first) setActiveTense(first)
-                      else setActiveTense(Object.keys(data)[0] || '')
-                    }
-                  }}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium capitalize ${
-                    activeMode === m
-                      ? 'bg-primary-100 text-primary-800'
-                      : 'text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  {m}
-                </button>
-              ))}
-            </div>
-
-            {/* Tense selector for person-based modes */}
-            {currentMode &&
-              Object.keys(currentMode).some(
-                (k) => typeof currentMode[k] === 'object'
-              ) && (
-                <div className="flex flex-wrap gap-1">
-                  {Object.keys(currentMode)
-                    .filter((k) => typeof currentMode[k] === 'object')
-                    .map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => setActiveTense(t)}
-                        className={`px-2.5 py-1 rounded-md text-xs font-medium ${
-                          activeTense === t
-                            ? 'bg-slate-800 text-white'
-                            : 'bg-slate-100 text-slate-600'
-                        }`}
-                      >
-                        {t.replace(/_/g, ' ')}
-                      </button>
-                    ))}
-                </div>
-              )}
-
-            {/* Person forms */}
-            {isPersonTense && (
-              <div className="grid sm:grid-cols-2 gap-3">
-                {Object.entries(currentMode[activeTense] as PersonForms).map(
-                  ([person, value]) => (
-                    <div key={person}>
-                      <label className="label capitalize text-xs">
-                        {person.replace(/_/g, ' ')}
-                      </label>
-                      <input
-                        className="input"
-                        value={value || ''}
-                        onChange={(e) =>
-                          updateConjugation(
-                            activeMode,
-                            activeTense,
-                            person,
-                            e.target.value
-                          )
-                        }
-                      />
-                    </div>
-                  )
-                )}
-              </div>
-            )}
-
-            {/* Simple string forms (infinitif, participe, gerondif) */}
-            {currentMode &&
-              !Object.keys(currentMode).some(
-                (k) => typeof currentMode[k] === 'object'
-              ) && (
-                <div className="grid sm:grid-cols-2 gap-3">
-                  {Object.entries(currentMode).map(([k, v]) =>
-                    typeof v === 'string' ? (
-                      <div key={k}>
-                        <label className="label capitalize text-xs">
-                          {k.replace(/_/g, ' ')}
-                        </label>
-                        <input
-                          className="input"
-                          value={v}
-                          onChange={(e) =>
-                            updateSimpleForm(activeMode, k, e.target.value)
-                          }
-                        />
-                      </div>
-                    ) : null
-                  )}
-                </div>
-              )}
-          </div>
-        )}
-
         <div className="flex justify-end gap-3 pt-2">
-          <Link
-            to={isEdit ? `/words/${id}` : '/words'}
-            className="btn-secondary"
-          >
+          <Link to={isEdit ? `/words/${id}` : '/words'} className="btn-secondary">
             Annuler
           </Link>
           <button type="submit" className="btn-primary" disabled={saving}>

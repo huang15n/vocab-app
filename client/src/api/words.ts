@@ -21,6 +21,11 @@ export const api = {
     request<Word>(`/words/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteWord: (id: number) =>
     request<{ message: string }>(`/words/${id}`, { method: 'DELETE' }),
+  bulkDelete: (ids: number[]) =>
+    request<{ message: string; deleted: number }>('/words/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
 
   // Import
   importFile: (file: File, setId?: number) => {

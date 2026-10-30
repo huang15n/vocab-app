@@ -169,13 +169,17 @@ app.post('/api/words', auth, (req, res) => {
     word: body.word.trim(),
     category: body.category,
     ipa: body.ipa.trim(),
+    gender: body.category === 'nom' ? (body.gender || '') : undefined,
     translations: {
       en: body.translations?.en || '',
+      enExample: body.translations?.enExample || '',
       es: body.translations?.es || '',
-      fr: body.translations?.fr || '',
+      esExample: body.translations?.esExample || '',
     },
     definition: body.definition || '',
-    examples: body.examples || [],
+    examples: Array.isArray(body.examples)
+      ? body.examples.map((e) => (typeof e === 'string' ? e : e?.sentence || '')).filter(Boolean)
+      : [],
     collocations: body.collocations || [],
     synonyms: body.synonyms || [],
     antonyms: body.antonyms || [],
@@ -197,28 +201,32 @@ app.put('/api/words/:id', auth, (req, res) => {
   if (idx === -1) return res.status(404).json({ error: 'Mot non trouvé' });
   const body = req.body;
   const existing = db.words[idx];
+  const cat = body.category ?? existing.category;
+  let examples = body.examples ?? existing.examples;
+  if (Array.isArray(examples)) {
+    examples = examples.map((e) => (typeof e === 'string' ? e : e?.sentence || '')).filter(Boolean);
+  }
   const updated = {
     ...existing,
     word: body.word?.trim() ?? existing.word,
-    category: body.category ?? existing.category,
+    category: cat,
     ipa: body.ipa?.trim() ?? existing.ipa,
+    gender: cat === 'nom' ? (body.gender ?? existing.gender ?? '') : undefined,
     translations: {
       en: body.translations?.en ?? existing.translations?.en ?? '',
+      enExample: body.translations?.enExample ?? existing.translations?.enExample ?? '',
       es: body.translations?.es ?? existing.translations?.es ?? '',
-      fr: body.translations?.fr ?? existing.translations?.fr ?? '',
+      esExample: body.translations?.esExample ?? existing.translations?.esExample ?? '',
     },
     definition: body.definition ?? existing.definition,
-    examples: body.examples ?? existing.examples,
+    examples,
     collocations: body.collocations ?? existing.collocations,
     synonyms: body.synonyms ?? existing.synonyms,
     antonyms: body.antonyms ?? existing.antonyms,
     tags: body.tags ?? existing.tags,
     cefrLevel: body.cefrLevel ?? existing.cefrLevel,
     learningStatus: body.learningStatus ?? existing.learningStatus,
-    conjugations:
-      body.category === 'verbe' || existing.category === 'verbe'
-        ? body.conjugations ?? existing.conjugations
-        : null,
+    conjugations: cat === 'verbe' ? (body.conjugations ?? existing.conjugations) : null,
     notes: body.notes ?? existing.notes,
     updatedAt: new Date().toISOString(),
   };
@@ -240,6 +248,22 @@ app.delete('/api/words/:id', auth, (req, res) => {
   res.json({ message: 'Mot supprimé' });
 });
 
+// Bulk delete
+app.post('/api/words/bulk-delete', auth, (req, res) => {
+  const ids = (req.body.ids || []).map(Number).filter(Boolean);
+  if (!ids.length) return res.status(400).json({ error: 'Aucun id fourni' });
+  const idSet = new Set(ids);
+  const before = db.words.length;
+  db.words = db.words.filter((w) => !(w.userId === req.user.id && idSet.has(w.id)));
+  const deleted = before - db.words.length;
+  db.sets.forEach((s) => {
+    if (s.userId === req.user.id) s.wordIds = s.wordIds.filter((id) => !idSet.has(id));
+  });
+  db.progress = db.progress.filter((p) => !(p.userId === req.user.id && idSet.has(p.wordId)));
+  saveDb();
+  res.json({ message: `${deleted} mot(s) supprimé(s)`, deleted });
+});
+
 // ---------- Bulk import CSV / Excel ----------
 function normalizeRow(row) {
   const get = (...keys) => {
@@ -253,40 +277,37 @@ function normalizeRow(row) {
   if (!word) return null;
   const category = (get('category', 'catégorie', 'categorie', 'type') || 'nom').toLowerCase();
   const validCats = ['verbe', 'nom', 'adjectif', 'expression', 'adverbe', 'autre'];
+  const cat = validCats.includes(category) ? category : 'nom';
+  const genderRaw = get('gender', 'genre').toLowerCase();
+  let gender = '';
+  if (genderRaw.startsWith('m')) gender = 'masculin';
+  else if (genderRaw.startsWith('f')) gender = 'feminin';
+  else if (genderRaw) gender = 'invariable';
+  const frEx = get('example', 'exemple', 'examples', 'exemples');
   return {
     word,
-    category: validCats.includes(category) ? category : 'nom',
+    category: cat,
     ipa: get('ipa', 'pronunciation', 'prononciation') || `/${word}/`,
+    gender: cat === 'nom' ? gender : undefined,
     translations: {
       en: get('en', 'english', 'anglais', 'translation', 'traduction'),
+      enExample: get('en_example', 'enexample', 'exemple_en', 'example_en'),
       es: get('es', 'spanish', 'espagnol'),
-      fr: get('fr', 'french', 'français', 'definition_fr'),
+      esExample: get('es_example', 'esexample', 'exemple_es', 'example_es'),
     },
     definition: get('definition', 'définition', 'def'),
-    examples: [],
+    examples: frEx ? frEx.split(/[;|]/).map((s) => s.trim()).filter(Boolean) : [],
     collocations: get('collocations')
-      ? get('collocations')
-          .split(/[;|]/)
-          .map((s) => s.trim())
-          .filter(Boolean)
+      ? get('collocations').split(/[;|]/).map((s) => s.trim()).filter(Boolean)
       : [],
     synonyms: get('synonyms', 'synonymes')
-      ? get('synonyms', 'synonymes')
-          .split(/[;|,]/)
-          .map((s) => s.trim())
-          .filter(Boolean)
+      ? get('synonyms', 'synonymes').split(/[;|,]/).map((s) => s.trim()).filter(Boolean)
       : [],
     antonyms: get('antonyms', 'antonymes')
-      ? get('antonyms', 'antonymes')
-          .split(/[;|,]/)
-          .map((s) => s.trim())
-          .filter(Boolean)
+      ? get('antonyms', 'antonymes').split(/[;|,]/).map((s) => s.trim()).filter(Boolean)
       : [],
     tags: get('tags', 'étiquettes', 'etiquettes')
-      ? get('tags', 'étiquettes', 'etiquettes')
-          .split(/[;|,]/)
-          .map((s) => s.trim())
-          .filter(Boolean)
+      ? get('tags', 'étiquettes', 'etiquettes').split(/[;|,]/).map((s) => s.trim()).filter(Boolean)
       : [],
     cefrLevel: get('cefr', 'level', 'niveau', 'cefrlevel'),
     learningStatus: 'nouveau',
@@ -294,73 +315,6 @@ function normalizeRow(row) {
     notes: get('notes', 'note'),
   };
 }
-
-app.post('/api/import', auth, upload.single('file'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'Fichier requis (CSV ou Excel)' });
-
-  const ext = path.extname(req.file.originalname).toLowerCase();
-  let rows = [];
-
-  try {
-    if (ext === '.csv' || req.file.mimetype === 'text/csv') {
-      rows = parse(req.file.buffer.toString('utf8'), {
-        columns: true,
-        skip_empty_lines: true,
-        trim: true,
-        bom: true,
-      });
-    } else if (ext === '.xlsx' || ext === '.xls' || req.file.mimetype.includes('spreadsheet')) {
-      const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
-      const sheet = wb.Sheets[wb.SheetNames[0]];
-      rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-    } else {
-      return res.status(400).json({ error: 'Format non supporté. Utilisez .csv, .xlsx ou .xls' });
-    }
-  } catch (e) {
-    return res.status(400).json({ error: 'Impossible de lire le fichier : ' + e.message });
-  }
-
-  const created = [];
-  const skipped = [];
-  const setId = req.body.setId ? Number(req.body.setId) : null;
-  let set = null;
-  if (setId) {
-    set = db.sets.find((s) => s.id === setId && s.userId === req.user.id);
-  }
-
-  for (const row of rows) {
-    const normalized = normalizeRow(row);
-    if (!normalized) {
-      skipped.push({ reason: 'Mot manquant', row });
-      continue;
-    }
-    const exists = db.words.find(
-      (w) => w.userId === req.user.id && w.word.toLowerCase() === normalized.word.toLowerCase()
-    );
-    if (exists && req.query.skipDuplicates !== 'false') {
-      skipped.push({ reason: 'Doublon', word: normalized.word });
-      if (set && !set.wordIds.includes(exists.id)) set.wordIds.push(exists.id);
-      continue;
-    }
-    const newWord = {
-      id: db.nextWordId++,
-      userId: req.user.id,
-      ...normalized,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    db.words.push(newWord);
-    created.push(newWord);
-    if (set) set.wordIds.push(newWord.id);
-  }
-  saveDb();
-  res.json({
-    message: `${created.length} mot(s) importé(s), ${skipped.length} ignoré(s)`,
-    created: created.length,
-    skipped: skipped.length,
-    words: created,
-  });
-});
 
 // ---------- Study Sets ----------
 app.get('/api/sets', auth, (req, res) => {
@@ -542,7 +496,7 @@ app.get('/api/study/:setId/cards', auth, (req, res) => {
     back: w.translations?.en || w.definition || '',
     ipa: w.ipa,
     category: w.category,
-    example: w.examples?.[0]?.sentence || '',
+    example: (Array.isArray(w.examples) ? (typeof w.examples[0] === 'string' ? w.examples[0] : w.examples[0]?.sentence) : '') || '',
     progress: getProgress(req.user.id, w.id),
   }));
   saveDb();

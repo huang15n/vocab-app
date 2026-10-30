@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Edit, Trash2, Copy, Check } from 'lucide-react'
+import { ArrowLeft, Edit, Trash2, ChevronDown, ChevronRight } from 'lucide-react'
 import { api } from '../api/words'
 import type { Word, Conjugations, PersonForms } from '../types'
-import ConjugationTable from '../components/ConjugationTable'
+import {
+  CONJUGATION_TENSES_PRIORITY,
+  CONJUGATION_TENSES_LATER,
+} from '../types'
 
 const statusLabels: Record<string, string> = {
   nouveau: 'Nouveau',
@@ -21,26 +24,24 @@ const categoryLabels: Record<string, string> = {
   autre: 'Autre',
 }
 
+const genderLabels: Record<string, string> = {
+  masculin: 'Masculin',
+  feminin: 'Féminin',
+  invariable: 'Invariable',
+}
+
 export default function WordDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [word, setWord] = useState<Word | null>(null)
   const [loading, setLoading] = useState(true)
-  const [copied, setCopied] = useState(false)
-  const [activeMode, setActiveMode] = useState('indicatif')
-  const [activeTense, setActiveTense] = useState('present')
+  const [openTenses, setOpenTenses] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     if (!id) return
     api
       .getWord(Number(id))
-      .then((w) => {
-        setWord(w)
-        if (w.conjugations?.indicatif) {
-          const tenses = Object.keys(w.conjugations.indicatif)
-          if (tenses.length) setActiveTense(tenses[0])
-        }
-      })
+      .then(setWord)
       .catch(() => navigate('/words'))
       .finally(() => setLoading(false))
   }, [id, navigate])
@@ -51,37 +52,18 @@ export default function WordDetail() {
     navigate('/words')
   }
 
-  const copyConjugation = () => {
-    if (!word?.conjugations) return
-    const mode = word.conjugations[activeMode as keyof Conjugations] as any
-    if (!mode) return
-    const tense = mode[activeTense]
-    if (!tense || typeof tense === 'string') return
-    const lines = Object.entries(tense as PersonForms)
-      .map(([p, f]) => `${p}\t${f}`)
-      .join('\n')
-    navigator.clipboard.writeText(lines)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
   if (loading) return <div className="text-center py-20 text-slate-400">Chargement…</div>
   if (!word) return null
 
-  const modes = word.conjugations
-    ? (Object.keys(word.conjugations) as (keyof Conjugations)[]).filter(
-        (m) => word.conjugations![m]
-      )
-    : []
+  const examples = (word.examples || []).map((e: any) =>
+    typeof e === 'string' ? e : e?.sentence || ''
+  ).filter(Boolean)
 
-  const currentModeData = word.conjugations?.[activeMode as keyof Conjugations] as
-    | Record<string, PersonForms | string>
-    | undefined
-
-  const tenses =
-    currentModeData && typeof currentModeData === 'object'
-      ? Object.keys(currentModeData).filter((k) => typeof currentModeData[k] === 'object')
-      : []
+  const allTenses = [...CONJUGATION_TENSES_PRIORITY, ...CONJUGATION_TENSES_LATER]
+  const filledTenses = allTenses.filter(({ key }) => {
+    const forms = word.conjugations?.[key as keyof Conjugations]
+    return forms && typeof forms === 'object' && Object.values(forms).some((v) => v)
+  })
 
   return (
     <div className="space-y-6">
@@ -97,6 +79,9 @@ export default function WordDetail() {
           <div className="flex gap-2 mt-1 flex-wrap">
             <span className="badge bg-slate-100 text-slate-700">
               {categoryLabels[word.category]}
+              {word.category === 'nom' && word.gender
+                ? ` · ${genderLabels[word.gender] || word.gender}`
+                : ''}
             </span>
             <span className="badge bg-primary-50 text-primary-700">
               {statusLabels[word.learningStatus]}
@@ -120,14 +105,20 @@ export default function WordDetail() {
       {/* Translations */}
       <div className="card p-5">
         <h2 className="font-semibold text-slate-800 mb-3">Traductions</h2>
-        <div className="grid sm:grid-cols-2 gap-4">
+        <div className="grid sm:grid-cols-2 gap-6">
           <div>
             <p className="text-xs text-slate-500 uppercase tracking-wide">Anglais</p>
-            <p className="text-slate-900">{word.translations.en || '—'}</p>
+            <p className="text-slate-900 font-medium mt-0.5">{word.translations?.en || '—'}</p>
+            {word.translations?.enExample && (
+              <p className="text-sm text-slate-500 italic mt-1">« {word.translations.enExample} »</p>
+            )}
           </div>
           <div>
             <p className="text-xs text-slate-500 uppercase tracking-wide">Espagnol</p>
-            <p className="text-slate-900">{word.translations.es || '—'}</p>
+            <p className="text-slate-900 font-medium mt-0.5">{word.translations?.es || '—'}</p>
+            {word.translations?.esExample && (
+              <p className="text-sm text-slate-500 italic mt-1">« {word.translations.esExample} »</p>
+            )}
           </div>
         </div>
         {word.definition && (
@@ -138,24 +129,23 @@ export default function WordDetail() {
         )}
       </div>
 
-      {/* Examples */}
-      {word.examples.length > 0 && (
+      {/* French examples */}
+      {examples.length > 0 && (
         <div className="card p-5">
-          <h2 className="font-semibold text-slate-800 mb-3">Exemples</h2>
-          <ul className="space-y-3">
-            {word.examples.map((ex, i) => (
-              <li key={i} className="border-l-2 border-primary-300 pl-3">
-                <p className="text-slate-900">{ex.sentence}</p>
-                <p className="text-slate-500 text-sm italic">{ex.translation}</p>
+          <h2 className="font-semibold text-slate-800 mb-3">Exemples (français)</h2>
+          <ul className="space-y-2">
+            {examples.map((ex, i) => (
+              <li key={i} className="border-l-2 border-primary-300 pl-3 text-slate-900">
+                {ex}
               </li>
             ))}
           </ul>
         </div>
       )}
 
-      {/* Collocations / Synonyms / Antonyms */}
+      {/* Collocations / Syn / Ant */}
       <div className="grid sm:grid-cols-3 gap-4">
-        {word.collocations.length > 0 && (
+        {word.collocations?.length > 0 && (
           <div className="card p-4">
             <h3 className="text-sm font-semibold text-slate-700 mb-2">Collocations</h3>
             <ul className="space-y-1">
@@ -165,13 +155,13 @@ export default function WordDetail() {
             </ul>
           </div>
         )}
-        {word.synonyms.length > 0 && (
+        {word.synonyms?.length > 0 && (
           <div className="card p-4">
             <h3 className="text-sm font-semibold text-slate-700 mb-2">Synonymes</h3>
             <p className="text-sm text-slate-600">{word.synonyms.join(', ')}</p>
           </div>
         )}
-        {word.antonyms.length > 0 && (
+        {word.antonyms?.length > 0 && (
           <div className="card p-4">
             <h3 className="text-sm font-semibold text-slate-700 mb-2">Antonymes</h3>
             <p className="text-sm text-slate-600">{word.antonyms.join(', ')}</p>
@@ -179,8 +169,7 @@ export default function WordDetail() {
         )}
       </div>
 
-      {/* Tags */}
-      {word.tags.length > 0 && (
+      {word.tags?.length > 0 && (
         <div className="flex gap-2 flex-wrap">
           {word.tags.map((t) => (
             <span key={t} className="badge bg-primary-50 text-primary-700">
@@ -190,78 +179,40 @@ export default function WordDetail() {
         </div>
       )}
 
-      {/* Conjugations - only for verbs */}
-      {word.category === 'verbe' && word.conjugations && (
-        <div className="card p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-slate-800">Conjugaison</h2>
-            <button onClick={copyConjugation} className="btn-ghost text-xs">
-              {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-              {copied ? 'Copié' : 'Copier'}
-            </button>
-          </div>
-
-          {/* Mode tabs */}
-          <div className="flex flex-wrap gap-1 mb-4 border-b border-slate-200 pb-2">
-            {modes.map((m) => (
-              <button
-                key={m}
-                onClick={() => {
-                  setActiveMode(m)
-                  const data = word.conjugations![m] as any
-                  if (data && typeof data === 'object') {
-                    const first = Object.keys(data).find((k) => typeof data[k] === 'object')
-                    if (first) setActiveTense(first)
-                  }
-                }}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium capitalize transition-colors ${
-                  activeMode === m
-                    ? 'bg-primary-100 text-primary-800'
-                    : 'text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
-
-          {/* Tense tabs */}
-          {tenses.length > 0 && (
-            <div className="flex flex-wrap gap-1 mb-4">
-              {tenses.map((t) => (
+      {/* Conjugations */}
+      {word.category === 'verbe' && filledTenses.length > 0 && (
+        <div className="card p-5 space-y-2">
+          <h2 className="font-semibold text-slate-800 mb-2">Conjugaison</h2>
+          {filledTenses.map(({ key, label }) => {
+            const forms = word.conjugations![key as keyof Conjugations] as PersonForms | Record<string, string>
+            const open = openTenses[key] ?? false
+            return (
+              <div key={key} className="border border-slate-200 rounded-lg overflow-hidden">
                 <button
-                  key={t}
-                  onClick={() => setActiveTense(t)}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                    activeTense === t
-                      ? 'bg-slate-800 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
+                  type="button"
+                  onClick={() => setOpenTenses((o) => ({ ...o, [key]: !open }))}
+                  className="w-full flex items-center justify-between px-3 py-2.5 bg-slate-50 text-left"
                 >
-                  {t.replace(/_/g, ' ')}
+                  <span className="font-medium text-sm">{label}</span>
+                  {open ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
                 </button>
-              ))}
-            </div>
-          )}
-
-          {/* Table */}
-          {currentModeData && currentModeData[activeTense] && typeof currentModeData[activeTense] === 'object' ? (
-            <ConjugationTable forms={currentModeData[activeTense] as PersonForms} />
-          ) : currentModeData && typeof currentModeData === 'object' && !tenses.length ? (
-            // infinitif / participe / gerondif
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              {Object.entries(currentModeData).map(([k, v]) =>
-                typeof v === 'string' ? (
-                  <div key={k}>
-                    <span className="text-slate-500 capitalize">{k.replace(/_/g, ' ')} : </span>
-                    <span className="font-medium">{v}</span>
-                  </div>
-                ) : null
-              )}
-            </div>
-          ) : (
-            <p className="text-slate-400 text-sm">Aucune forme pour ce temps.</p>
-          )}
+                {open && (
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {Object.entries(forms).map(([person, formVal]) =>
+                        formVal ? (
+                          <tr key={person} className="border-t border-slate-100">
+                            <td className="py-2 px-3 text-slate-500 w-36 capitalize">{person}</td>
+                            <td className="py-2 px-3 font-medium">{formVal}</td>
+                          </tr>
+                        ) : null
+                      )}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 

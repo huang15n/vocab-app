@@ -1,10 +1,6 @@
 export type Category = 'verbe' | 'nom' | 'adjectif' | 'expression' | 'adverbe' | 'autre';
 export type LearningStatus = 'nouveau' | 'en_cours' | 'appris' | 'a_reviser';
-
-export interface Example {
-  sentence: string;
-  translation: string;
-}
+export type Gender = 'masculin' | 'feminin' | 'invariable' | '';
 
 export interface PersonForms {
   je?: string;
@@ -13,27 +9,47 @@ export interface PersonForms {
   nous?: string;
   vous?: string;
   'ils/elles'?: string;
-  que_je?: string;
-  que_tu?: string;
-  'qu_il/elle/on'?: string;
-  que_nous?: string;
-  que_vous?: string;
-  'qu_ils/elles'?: string;
 }
 
-export interface TenseForms {
-  [tense: string]: PersonForms | string | undefined;
+export interface ImperatifForms {
+  tu?: string;
+  nous?: string;
+  vous?: string;
 }
 
+/** Conjugaisons optionnelles, tense par tense */
 export interface Conjugations {
-  indicatif?: TenseForms;
-  subjonctif?: TenseForms;
-  conditionnel?: TenseForms;
-  imperatif?: TenseForms;
-  infinitif?: { present?: string; passe?: string };
-  participe?: { present?: string; passe?: string };
-  gerondif?: { present?: string };
+  present?: PersonForms;
+  passe_compose?: PersonForms;
+  imparfait?: PersonForms;
+  futur_simple?: PersonForms;
+  futur_proche?: PersonForms;
+  conditionnel_present?: PersonForms;
+  subjonctif_present?: PersonForms;
+  plus_que_parfait?: PersonForms;
+  conditionnel_passe?: PersonForms;
+  imperatif_present?: ImperatifForms;
+  futur_anterieur?: PersonForms;
+  subjonctif_passe?: PersonForms;
 }
+
+export const CONJUGATION_TENSES_PRIORITY = [
+  { key: 'present', label: 'Présent' },
+  { key: 'passe_compose', label: 'Passé composé' },
+  { key: 'imparfait', label: 'Imparfait' },
+  { key: 'futur_simple', label: 'Futur simple' },
+  { key: 'futur_proche', label: 'Futur proche' },
+  { key: 'conditionnel_present', label: 'Conditionnel présent' },
+  { key: 'subjonctif_present', label: 'Subjonctif présent' },
+] as const;
+
+export const CONJUGATION_TENSES_LATER = [
+  { key: 'plus_que_parfait', label: 'Plus-que-parfait' },
+  { key: 'conditionnel_passe', label: 'Conditionnel passé' },
+  { key: 'imperatif_present', label: 'Impératif présent' },
+  { key: 'futur_anterieur', label: 'Futur antérieur' },
+  { key: 'subjonctif_passe', label: 'Subjonctif passé' },
+] as const;
 
 export interface Word {
   id: number;
@@ -41,13 +57,16 @@ export interface Word {
   word: string;
   category: Category;
   ipa: string;
+  gender?: Gender;
   translations: {
     en: string;
+    enExample?: string;
     es: string;
-    fr?: string;
+    esExample?: string;
   };
   definition?: string;
-  examples: Example[];
+  /** Exemples en français uniquement */
+  examples: string[];
   collocations: string[];
   synonyms: string[];
   antonyms: string[];
@@ -64,9 +83,15 @@ export interface WordFormData {
   word: string;
   category: Category;
   ipa: string;
-  translations: { en: string; es: string; fr?: string };
+  gender?: Gender;
+  translations: {
+    en: string;
+    enExample?: string;
+    es: string;
+    esExample?: string;
+  };
   definition?: string;
-  examples: Example[];
+  examples: string[];
   collocations: string[];
   synonyms: string[];
   antonyms: string[];
