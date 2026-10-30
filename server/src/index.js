@@ -273,6 +273,9 @@ app.post('/api/:lang/words', auth, (req, res) => {
   if (!entry.category) {
     return res.status(400).json({ error: 'Catégorie requise' });
   }
+  if (!(entry.definition || '').trim()) {
+    return res.status(400).json({ error: 'Définition requise' });
+  }
   const dup = findDuplicate(lang, req.user.id, entry.word);
   if (dup) {
     return res.status(409).json({

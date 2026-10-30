@@ -169,6 +169,12 @@ export default function WordForm() {
       setError(t('required'))
       return
     }
+    if (!form.definition?.trim()) {
+      setError(
+        t('definition') + ' — ' + t('required')
+      )
+      return
+    }
     setSaving(true)
     try {
       let conjugations = form.conjugations
@@ -198,14 +204,17 @@ export default function WordForm() {
         navigate(`/words/${created.id}`)
       }
     } catch (err: any) {
-      const msg = err.message || 'Error'
-      if (err.duplicates?.length || err.error === 'duplicate') {
-        setError(
-          (err.message || 'Duplicate') +
-            (err.duplicates?.length ? ': ' + err.duplicates.join(', ') : '')
-        )
+      if (err.error === 'duplicate' || err.status === 409) {
+        const w = err.existing?.word || err.duplicates?.[0] || form.word
+        const warn =
+          lang === 'en'
+            ? `Repeated word — « ${w} » already exists`
+            : lang === 'es'
+              ? `Palabra repetida — « ${w} » ya existe`
+              : `Mot répété — « ${w} » existe déjà`
+        setError(warn)
       } else {
-        setError(msg)
+        setError(err.message || 'Error')
       }
     } finally {
       setSaving(false)
@@ -353,6 +362,17 @@ export default function WordForm() {
               </select>
             </div>
           </div>
+          <div>
+            <label className="label">{t('definition')} *</label>
+            <textarea
+              className="input"
+              rows={2}
+              value={form.definition}
+              onChange={(e) => update('definition', e.target.value)}
+              required
+              placeholder={t('definition')}
+            />
+          </div>
         </div>
 
         {/* Translations / glosses depending on current lang */}
@@ -419,15 +439,6 @@ export default function WordForm() {
                 </div>
               </>
             )}
-          </div>
-          <div>
-            <label className="label">{t('definition')}</label>
-            <textarea
-              className="input"
-              rows={2}
-              value={form.definition}
-              onChange={(e) => update('definition', e.target.value)}
-            />
           </div>
         </div>
 
