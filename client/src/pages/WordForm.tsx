@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, Plus, Trash2, Save, ChevronDown, ChevronRight } from 'lucide-react'
 import { api } from '../api/words'
+import { useLang } from '../context/LanguageContext'
 import type {
   WordFormData,
   Category,
@@ -13,8 +14,9 @@ import type {
 import {
   CONJUGATION_TENSES_PRIORITY,
   CONJUGATION_TENSES_LATER,
+  IELTS_LEVELS,
+  CEFR_LEVELS,
 } from '../types'
-import { useLang } from '../context/LanguageContext'
 
 const emptyPerson = (): PersonForms => ({
   je: '',
@@ -25,46 +27,44 @@ const emptyPerson = (): PersonForms => ({
   'ils/elles': '',
 })
 
-const emptyForm: WordFormData = {
-  fr: '',
-  en: '',
-  es: '',
-  category: 'nom',
+function emptyConjugations(): Conjugations {
+  const c: Conjugations = {}
+  ;[...CONJUGATION_TENSES_PRIORITY, ...CONJUGATION_TENSES_LATER].forEach(({ key }) => {
+    if (key === 'imperatif_present') (c as any)[key] = { tu: '', nous: '', vous: '' }
+    else (c as any)[key] = emptyPerson()
+  })
+  return c
+}
+
+const emptyForm = (): WordFormData => ({
+  word: '',
   ipa: '',
+  category: 'nom',
   gender: '',
-  exampleFr: '',
-  exampleEn: '',
-  exampleEs: '',
+  level: '',
+  learningStatus: 'nouveau',
   definition: '',
   examples: [],
   collocations: [],
   synonyms: [],
   antonyms: [],
   tags: [],
-  cefrLevel: '',
-  learningStatus: 'nouveau',
+  glossFr: '',
+  glossEn: '',
+  glossEs: '',
+  exampleFr: '',
+  exampleEn: '',
+  exampleEs: '',
   conjugations: null,
   notes: '',
-}
-
-function emptyConjugations(): Conjugations {
-  const c: Conjugations = {}
-  ;[...CONJUGATION_TENSES_PRIORITY, ...CONJUGATION_TENSES_LATER].forEach(({ key }) => {
-    if (key === 'imperatif_present') {
-      ;(c as any)[key] = { tu: '', nous: '', vous: '' }
-    } else {
-      ;(c as any)[key] = emptyPerson()
-    }
-  })
-  return c
-}
+})
 
 export default function WordForm() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { t } = useLang()
+  const { lang, t } = useLang()
   const isEdit = Boolean(id)
-  const [form, setForm] = useState<WordFormData>(emptyForm)
+  const [form, setForm] = useState<WordFormData>(emptyForm())
   const [loading, setLoading] = useState(isEdit)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -75,34 +75,41 @@ export default function WordForm() {
   const [openTenses, setOpenTenses] = useState<Record<string, boolean>>({ present: true })
   const [showLater, setShowLater] = useState(false)
 
+  const hasGender = lang === 'fr' || lang === 'es'
+  const hasConjugation = (lang === 'fr' || lang === 'es') && form.category === 'verbe'
+  const levels = lang === 'en' ? IELTS_LEVELS : CEFR_LEVELS
+  const levelLabel = lang === 'en' ? 'IELTS' : t('cefr')
+
   useEffect(() => {
-    if (!id) return
+    if (!id) {
+      setForm(emptyForm())
+      return
+    }
+    setLoading(true)
     api
-      .getWord(Number(id))
+      .getWord(lang, Number(id))
       .then((w) => {
-        const examples = (w.examples || []).map((e: any) =>
-          typeof e === 'string' ? e : e?.sentence || ''
-        )
         setForm({
-          fr: w.fr || w.word || '',
-          en: w.en || w.translations?.en || '',
-          es: w.es || w.translations?.es || '',
+          word: w.word || '',
+          ipa: w.ipa || '',
           category: w.category,
-          ipa: w.ipa,
           gender: w.gender || '',
-          exampleFr: w.exampleFr || (examples[0] || ''),
-          exampleEn: w.exampleEn || w.translations?.enExample || '',
-          exampleEs: w.exampleEs || w.translations?.esExample || '',
+          level: w.level || '',
+          learningStatus: w.learningStatus,
           definition: w.definition || '',
-          examples,
+          examples: (w.examples || []).map((e: any) => (typeof e === 'string' ? e : e?.sentence || '')),
           collocations: w.collocations || [],
           synonyms: w.synonyms || [],
           antonyms: w.antonyms || [],
           tags: w.tags || [],
-          cefrLevel: w.cefrLevel || '',
-          learningStatus: w.learningStatus,
+          glossFr: w.glossFr || '',
+          glossEn: w.glossEn || '',
+          glossEs: w.glossEs || '',
+          exampleFr: w.exampleFr || '',
+          exampleEn: w.exampleEn || '',
+          exampleEs: w.exampleEs || '',
           conjugations:
-            w.category === 'verbe'
+            hasGender && w.category === 'verbe'
               ? { ...emptyConjugations(), ...(w.conjugations || {}) }
               : null,
           notes: w.notes || '',
@@ -110,93 +117,62 @@ export default function WordForm() {
       })
       .catch(() => navigate('/words'))
       .finally(() => setLoading(false))
-  }, [id, navigate])
+  }, [id, lang])
 
-  const handleCategoryChange = (cat: Category) => {
-    setForm((prev) => ({
-      ...prev,
-      category: cat,
-      gender: cat === 'nom' ? prev.gender || '' : undefined,
-      conjugations: cat === 'verbe' ? prev.conjugations || emptyConjugations() : null,
-    }))
-  }
-
-  const updateField = <K extends keyof WordFormData>(key: K, value: WordFormData[K]) => {
+  const update = <K extends keyof WordFormData>(key: K, value: WordFormData[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
-  const updateTranslation = (
-    key: 'en' | 'enExample' | 'es' | 'esExample',
-    value: string
-  ) => {
+  const handleCategory = (cat: Category) => {
     setForm((prev) => ({
       ...prev,
-      translations: { ...prev.translations, [key]: value },
+      category: cat,
+      gender: cat === 'nom' && hasGender ? prev.gender || '' : undefined,
+      conjugations:
+        cat === 'verbe' && (lang === 'fr' || lang === 'es')
+          ? prev.conjugations || emptyConjugations()
+          : null,
     }))
   }
 
-  const addExample = () => {
-    setForm((prev) => ({ ...prev, examples: [...prev.examples, ''] }))
-  }
-
-  const updateExample = (idx: number, value: string) => {
-    setForm((prev) => {
-      const examples = [...prev.examples]
-      examples[idx] = value
-      return { ...prev, examples }
-    })
-  }
-
-  const removeExample = (idx: number) => {
-    setForm((prev) => ({
-      ...prev,
-      examples: prev.examples.filter((_, i) => i !== idx),
-    }))
-  }
-
-  const addTag = () => {
-    const t = tagInput.trim()
-    if (t && !form.tags.includes(t)) {
-      updateField('tags', [...form.tags, t])
-      setTagInput('')
-    }
-  }
-
-  const addListItem = (
-    key: 'collocations' | 'synonyms' | 'antonyms',
-    input: string,
-    setInput: (s: string) => void
-  ) => {
-    const v = input.trim()
-    if (v && !form[key].includes(v)) {
-      updateField(key, [...form[key], v])
-      setInput('')
-    }
-  }
-
-  const updateConjPerson = (tense: string, person: string, value: string) => {
+  const updateConj = (tense: string, person: string, value: string) => {
     setForm((prev) => {
       if (!prev.conjugations) return prev
       const conj = { ...prev.conjugations }
-      const tenseData = { ...((conj as any)[tense] || {}) }
-      tenseData[person] = value
-      ;(conj as any)[tense] = tenseData
+      const td = { ...((conj as any)[tense] || {}) }
+      td[person] = value
+      ;(conj as any)[tense] = td
       return { ...prev, conjugations: conj }
     })
+  }
+
+  const addList = (key: 'collocations' | 'synonyms' | 'antonyms' | 'tags' | 'examples', value: string) => {
+    const v = value.trim()
+    if (!v) return
+    setForm((prev) => ({
+      ...prev,
+      [key]: [...(prev[key] as string[]), v],
+    }))
+  }
+
+  const removeList = (key: 'collocations' | 'synonyms' | 'antonyms' | 'tags' | 'examples', idx: number) => {
+    setForm((prev) => ({
+      ...prev,
+      [key]: (prev[key] as string[]).filter((_, i) => i !== idx),
+    }))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    if (!form.fr.trim() || !form.en.trim()) {
-      setError('Mot français et anglais obligatoires.')
+    if (!form.word.trim()) {
+      setError(t('required'))
       return
     }
     setSaving(true)
     try {
-      // strip empty conjugation cells
       let conjugations = form.conjugations
-      if (form.category === 'verbe' && conjugations) {
+      if (hasConjugation && conjugations) {
         const cleaned: Conjugations = {}
         Object.entries(conjugations).forEach(([tense, forms]) => {
           if (!forms || typeof forms !== 'object') return
@@ -206,22 +182,23 @@ export default function WordForm() {
           if (Object.keys(filled).length) (cleaned as any)[tense] = filled
         })
         conjugations = Object.keys(cleaned).length ? cleaned : null
+      } else {
+        conjugations = null
       }
-      const payload = {
+      const payload: WordFormData = {
         ...form,
-        examples: form.examples.filter((e) => e.trim()),
-        conjugations: form.category === 'verbe' ? conjugations : null,
-        gender: form.category === 'nom' ? form.gender : undefined,
+        conjugations,
+        gender: hasGender && form.category === 'nom' ? form.gender : undefined,
       }
       if (isEdit && id) {
-        await api.updateWord(Number(id), payload)
+        await api.updateWord(lang, Number(id), payload)
         navigate(`/words/${id}`)
       } else {
-        const created = await api.createWord(payload)
+        const created = await api.createWord(lang, payload)
         navigate(`/words/${created.id}`)
       }
     } catch (err: any) {
-      setError(err.message || "Erreur lors de l'enregistrement")
+      setError(err.message || 'Error')
     } finally {
       setSaving(false)
     }
@@ -229,23 +206,25 @@ export default function WordForm() {
 
   if (loading) return <div className="text-center py-20 text-slate-400">{t('loading')}</div>
 
-  const renderTenseBlock = (key: string, label: string) => {
-    const isImperatif = key === 'imperatif_present'
-    const persons = isImperatif
+  const wordLabel =
+    lang === 'en' ? t('wordEn') : lang === 'es' ? t('wordEs') : t('wordFr')
+
+  const renderTense = (key: string, label: string) => {
+    const isImp = key === 'imperatif_present'
+    const persons = isImp
       ? (['tu', 'nous', 'vous'] as const)
       : (['je', 'tu', 'il/elle/on', 'nous', 'vous', 'ils/elles'] as const)
     const open = openTenses[key]
     const forms = (form.conjugations as any)?.[key] || {}
-
     return (
       <div key={key} className="border border-slate-200 rounded-lg overflow-hidden">
         <button
           type="button"
           onClick={() => setOpenTenses((o) => ({ ...o, [key]: !o[key] }))}
-          className="w-full flex items-center justify-between px-3 py-2.5 bg-slate-50 hover:bg-slate-100 text-left"
+          className="w-full flex items-center justify-between px-3 py-2.5 bg-slate-50 text-left"
         >
-          <span className="font-medium text-sm text-slate-800">{label}</span>
-          {open ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+          <span className="font-medium text-sm">{label}</span>
+          {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
         </button>
         {open && (
           <div className="p-3 grid sm:grid-cols-2 gap-2">
@@ -255,8 +234,7 @@ export default function WordForm() {
                 <input
                   className="input"
                   value={forms[p] || ''}
-                  onChange={(e) => updateConjPerson(key, p, e.target.value)}
-                  placeholder={p}
+                  onChange={(e) => updateConj(key, p, e.target.value)}
                 />
               </div>
             ))}
@@ -272,9 +250,10 @@ export default function WordForm() {
         <Link to={isEdit ? `/words/${id}` : '/words'} className="btn-ghost">
           <ArrowLeft className="w-4 h-4" />
         </Link>
-        <h1 className="text-2xl font-bold text-slate-900">
-          {isEdit ? t('editWord') : t('newWord')}
-        </h1>
+        <div>
+          <h1 className="text-2xl font-bold">{isEdit ? t('editWord') : t('newWord')}</h1>
+          <p className="text-xs text-violet-600 uppercase font-semibold">{lang}</p>
+        </div>
       </div>
 
       {error && (
@@ -286,25 +265,23 @@ export default function WordForm() {
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Basic */}
         <div className="card p-5 space-y-4">
-          <h2 className="font-semibold text-slate-800">{t('basicInfo')}</h2>
+          <h2 className="font-semibold">{t('basicInfo')}</h2>
           <div className="grid sm:grid-cols-2 gap-4">
             <div>
-              <label className="label">{t('wordFr')} *</label>
+              <label className="label">{wordLabel} *</label>
               <input
                 className="input"
-                value={form.fr}
-                onChange={(e) => updateField('fr', e.target.value)}
-                placeholder="ex. poser"
+                value={form.word}
+                onChange={(e) => update('word', e.target.value)}
                 required
               />
             </div>
             <div>
-              <label className="label">IPA</label>
+              <label className="label">{t('ipa')}</label>
               <input
                 className="input font-mono"
                 value={form.ipa}
-                onChange={(e) => updateField('ipa', e.target.value)}
-                placeholder="/po.ze/"
+                onChange={(e) => update('ipa', e.target.value)}
               />
             </div>
           </div>
@@ -314,7 +291,7 @@ export default function WordForm() {
               <select
                 className="input"
                 value={form.category}
-                onChange={(e) => handleCategoryChange(e.target.value as Category)}
+                onChange={(e) => handleCategory(e.target.value as Category)}
               >
                 <option value="verbe">{t('verb')}</option>
                 <option value="nom">{t('noun')}</option>
@@ -324,15 +301,15 @@ export default function WordForm() {
                 <option value="autre">{t('other')}</option>
               </select>
             </div>
-            {form.category === 'nom' && (
+            {hasGender && form.category === 'nom' && (
               <div>
-                <label className="label">{t('gender')} *</label>
+                <label className="label">{t('gender')}</label>
                 <select
                   className="input"
                   value={form.gender || ''}
-                  onChange={(e) => updateField('gender', e.target.value as Gender)}
+                  onChange={(e) => update('gender', e.target.value as Gender)}
                 >
-                  <option value="">— Choisir —</option>
+                  <option value="">—</option>
                   <option value="masculin">{t('masculine')}</option>
                   <option value="feminin">{t('feminine')}</option>
                   <option value="invariable">{t('invariable')}</option>
@@ -340,20 +317,18 @@ export default function WordForm() {
               </div>
             )}
             <div>
-              <label className="label">{t('cefr')}</label>
+              <label className="label">{levelLabel}</label>
               <select
                 className="input"
-                value={form.cefrLevel}
-                onChange={(e) => updateField('cefrLevel', e.target.value)}
+                value={form.level || ''}
+                onChange={(e) => update('level', e.target.value)}
               >
                 <option value="">—</option>
-                <option value="A1">A1</option>
-                <option value="A2">A2</option>
-                <option value="A2–B1">A2–B1</option>
-                <option value="B1">B1</option>
-                <option value="B2">B2</option>
-                <option value="C1">C1</option>
-                <option value="C2">C2</option>
+                {levels.map((lv) => (
+                  <option key={lv} value={lv}>
+                    {lang === 'en' ? `IELTS ${lv}` : lv}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
@@ -361,9 +336,7 @@ export default function WordForm() {
               <select
                 className="input"
                 value={form.learningStatus}
-                onChange={(e) =>
-                  updateField('learningStatus', e.target.value as LearningStatus)
-                }
+                onChange={(e) => update('learningStatus', e.target.value as LearningStatus)}
               >
                 <option value="nouveau">{t('statusNew')}</option>
                 <option value="en_cours">{t('statusLearning')}</option>
@@ -374,56 +347,70 @@ export default function WordForm() {
           </div>
         </div>
 
-        {/* Three languages */}
+        {/* Translations / glosses depending on current lang */}
         <div className="card p-5 space-y-4">
-          <h2 className="font-semibold text-slate-800">{t('translations')}</h2>
+          <h2 className="font-semibold">{t('translations')}</h2>
           <div className="grid sm:grid-cols-2 gap-4">
-            <div>
-              <label className="label">{t('wordEn')} *</label>
-              <input
-                className="input"
-                value={form.en}
-                onChange={(e) => updateField('en', e.target.value)}
-                placeholder="to ask; to put"
-                required
-              />
-            </div>
-            <div>
-              <label className="label">{t('exampleEn')}</label>
-              <input
-                className="input"
-                value={form.exampleEn || ''}
-                onChange={(e) => updateField('exampleEn', e.target.value)}
-                placeholder="I would like to ask a question."
-              />
-            </div>
-            <div>
-              <label className="label">{t('wordEs')}</label>
-              <input
-                className="input"
-                value={form.es}
-                onChange={(e) => updateField('es', e.target.value)}
-                placeholder="hacer una pregunta; poner"
-              />
-            </div>
-            <div>
-              <label className="label">{t('exampleEs')}</label>
-              <input
-                className="input"
-                value={form.exampleEs || ''}
-                onChange={(e) => updateField('exampleEs', e.target.value)}
-                placeholder="Me gustaría hacer una pregunta."
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className="label">{t('exampleFr')}</label>
-              <input
-                className="input"
-                value={form.exampleFr || ''}
-                onChange={(e) => updateField('exampleFr', e.target.value)}
-                placeholder="Je voudrais poser une question."
-              />
-            </div>
+            {lang !== 'en' && (
+              <>
+                <div>
+                  <label className="label">{t('wordEn')}</label>
+                  <input
+                    className="input"
+                    value={form.glossEn || ''}
+                    onChange={(e) => update('glossEn', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="label">{t('exampleEn')}</label>
+                  <input
+                    className="input"
+                    value={form.exampleEn || ''}
+                    onChange={(e) => update('exampleEn', e.target.value)}
+                  />
+                </div>
+              </>
+            )}
+            {lang !== 'es' && (
+              <>
+                <div>
+                  <label className="label">{t('wordEs')}</label>
+                  <input
+                    className="input"
+                    value={form.glossEs || ''}
+                    onChange={(e) => update('glossEs', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="label">{t('exampleEs')}</label>
+                  <input
+                    className="input"
+                    value={form.exampleEs || ''}
+                    onChange={(e) => update('exampleEs', e.target.value)}
+                  />
+                </div>
+              </>
+            )}
+            {lang !== 'fr' && (
+              <>
+                <div>
+                  <label className="label">{t('wordFr')}</label>
+                  <input
+                    className="input"
+                    value={form.glossFr || ''}
+                    onChange={(e) => update('glossFr', e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="label">{t('exampleFr')}</label>
+                  <input
+                    className="input"
+                    value={form.exampleFr || ''}
+                    onChange={(e) => update('exampleFr', e.target.value)}
+                  />
+                </div>
+              </>
+            )}
           </div>
           <div>
             <label className="label">{t('definition')}</label>
@@ -431,67 +418,61 @@ export default function WordForm() {
               className="input"
               rows={2}
               value={form.definition}
-              onChange={(e) => updateField('definition', e.target.value)}
+              onChange={(e) => update('definition', e.target.value)}
             />
           </div>
         </div>
 
-        {/* French examples only */}
-        <div className="card p-5 space-y-4">
+        {/* Examples in current language */}
+        <div className="card p-5 space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-slate-800">{t('examplesFr')}</h2>
-            <button type="button" onClick={addExample} className="btn-ghost text-sm">
-              <Plus className="w-4 h-4" /> Ajouter
+            <h2 className="font-semibold">
+              {lang === 'en' ? t('exampleEn') : lang === 'es' ? t('exampleEs') : t('examplesFr')}
+            </h2>
+            <button
+              type="button"
+              className="btn-ghost text-sm"
+              onClick={() => update('examples', [...form.examples, ''])}
+            >
+              <Plus className="w-4 h-4" /> {t('add')}
             </button>
           </div>
-          {form.examples.length === 0 && (
-            <p className="text-sm text-slate-400">{t('examplesFr')}</p>
-          )}
           {form.examples.map((ex, i) => (
             <div key={i} className="flex gap-2">
               <input
                 className="input flex-1"
-                placeholder="Phrase en français"
                 value={ex}
-                onChange={(e) => updateExample(i, e.target.value)}
+                onChange={(e) => {
+                  const next = [...form.examples]
+                  next[i] = e.target.value
+                  update('examples', next)
+                }}
               />
-              <button
-                type="button"
-                onClick={() => removeExample(i)}
-                className="btn-ghost text-red-500"
-              >
+              <button type="button" className="btn-ghost text-red-500" onClick={() => removeList('examples', i)}>
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>
           ))}
         </div>
 
-        {/* Conjugations for verbs */}
-        {form.category === 'verbe' && form.conjugations && (
+        {/* Conjugations FR / ES verbs only */}
+        {hasConjugation && form.conjugations && (
           <div className="card p-5 space-y-3">
-            <div>
-              <h2 className="font-semibold text-slate-800">{t('conjugations')}</h2>
-              <p className="text-sm text-slate-500 mt-1">
-                {t('conjugationsHint')}
-              </p>
-            </div>
+            <h2 className="font-semibold">{t('conjugations')}</h2>
+            <p className="text-sm text-slate-500">{t('conjugationsHint')}</p>
             <div className="space-y-2">
-              {CONJUGATION_TENSES_PRIORITY.map(({ key, label }) =>
-                renderTenseBlock(key, label)
-              )}
+              {CONJUGATION_TENSES_PRIORITY.map(({ key, label }) => renderTense(key, label))}
             </div>
             <button
               type="button"
+              className="text-sm text-primary-600 font-medium"
               onClick={() => setShowLater(!showLater)}
-              className="text-sm text-primary-600 font-medium hover:underline"
             >
-              {showLater ? 'Masquer' : 'Afficher'} les temps avancés
+              {showLater ? t('hideAdvanced') : t('showAdvanced')}
             </button>
             {showLater && (
               <div className="space-y-2">
-                {CONJUGATION_TENSES_LATER.map(({ key, label }) =>
-                  renderTenseBlock(key, label)
-                )}
+                {CONJUGATION_TENSES_LATER.map(({ key, label }) => renderTense(key, label))}
               </div>
             )}
           </div>
@@ -499,48 +480,46 @@ export default function WordForm() {
 
         {/* Relations */}
         <div className="card p-5 space-y-4">
-          <h2 className="font-semibold text-slate-800">{t('relations')}</h2>
+          <h2 className="font-semibold">{t('relations')}</h2>
           {(
             [
-              { label: 'Collocations', key: 'collocations' as const, input: collocInput, setInput: setCollocInput },
-              { label: 'Synonymes', key: 'synonyms' as const, input: synInput, setInput: setSynInput },
-              { label: 'Antonymes', key: 'antonyms' as const, input: antInput, setInput: setAntInput },
+              { key: 'collocations' as const, label: t('collocations'), input: collocInput, set: setCollocInput },
+              { key: 'synonyms' as const, label: t('synonyms'), input: synInput, set: setSynInput },
+              { key: 'antonyms' as const, label: t('antonyms'), input: antInput, set: setAntInput },
             ] as const
-          ).map(({ label, key, input, setInput }) => (
+          ).map(({ key, label, input, set }) => (
             <div key={key}>
               <label className="label">{label}</label>
               <div className="flex gap-2">
                 <input
                   className="input"
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
+                  onChange={(e) => set(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault()
-                      addListItem(key, input, setInput)
+                      addList(key, input)
+                      set('')
                     }
                   }}
-                  placeholder="Entrée pour ajouter"
                 />
                 <button
                   type="button"
-                  onClick={() => addListItem(key, input, setInput)}
                   className="btn-secondary"
+                  onClick={() => {
+                    addList(key, input)
+                    set('')
+                  }}
                 >
                   +
                 </button>
               </div>
               <div className="flex flex-wrap gap-1 mt-2">
-                {form[key].map((item) => (
+                {form[key].map((item, i) => (
                   <span
-                    key={item}
-                    className="badge bg-slate-100 text-slate-700 cursor-pointer hover:bg-red-100"
-                    onClick={() =>
-                      updateField(
-                        key,
-                        form[key].filter((x) => x !== item)
-                      )
-                    }
+                    key={item + i}
+                    className="badge bg-slate-100 cursor-pointer"
+                    onClick={() => removeList(key, i)}
                   >
                     {item} ×
                   </span>
@@ -558,28 +537,30 @@ export default function WordForm() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault()
-                    addTag()
+                    addList('tags', tagInput)
+                    setTagInput('')
                   }
                 }}
-                placeholder="communication, travail…"
               />
-              <button type="button" onClick={addTag} className="btn-secondary">
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={() => {
+                  addList('tags', tagInput)
+                  setTagInput('')
+                }}
+              >
                 +
               </button>
             </div>
             <div className="flex flex-wrap gap-1 mt-2">
-              {form.tags.map((t) => (
+              {form.tags.map((item, i) => (
                 <span
-                  key={t}
+                  key={item + i}
                   className="badge bg-primary-50 text-primary-700 cursor-pointer"
-                  onClick={() =>
-                    updateField(
-                      'tags',
-                      form.tags.filter((x) => x !== t)
-                    )
-                  }
+                  onClick={() => removeList('tags', i)}
                 >
-                  {t} ×
+                  {item} ×
                 </span>
               ))}
             </div>
@@ -590,14 +571,14 @@ export default function WordForm() {
               className="input"
               rows={2}
               value={form.notes}
-              onChange={(e) => updateField('notes', e.target.value)}
+              onChange={(e) => update('notes', e.target.value)}
             />
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 pt-2">
+        <div className="flex justify-end gap-3">
           <Link to={isEdit ? `/words/${id}` : '/words'} className="btn-secondary">
-            Annuler
+            {t('cancel')}
           </Link>
           <button type="submit" className="btn-primary" disabled={saving}>
             <Save className="w-4 h-4" />

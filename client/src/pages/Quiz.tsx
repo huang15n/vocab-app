@@ -22,7 +22,7 @@ export default function Quiz() {
   useEffect(() => {
     if (!setId) return
     api
-      .getQuiz(Number(setId), 15, lang)
+      .getQuiz(Number(setId), 15)
       .then((r) => {
         setQuestions(r.questions)
         setSetName(r.setName)
@@ -40,7 +40,7 @@ export default function Quiz() {
     if (!q) return
     const answer = mode === 'mcq' ? selected : written
     if (!answer) return
-    const res = await api.checkAnswer(q.wordId, answer, mode)
+    const res = await api.checkAnswer(q.wordId, answer, mode, lang)
     setFeedback({ correct: res.correct, correctAnswer: res.correctAnswer })
     setScore((s) => ({
       correct: s.correct + (res.correct ? 1 : 0),

@@ -6,7 +6,7 @@ import { useLang } from '../context/LanguageContext'
 import type { StudySet } from '../types'
 
 export default function ImportPage() {
-  const { t } = useLang()
+  const { t, lang } = useLang()
   const [file, setFile] = useState<File | null>(null)
   const [sets, setSets] = useState<StudySet[]>([])
   const [setId, setSetId] = useState('')
@@ -15,7 +15,7 @@ export default function ImportPage() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    api.getSets().then(setSets).catch(console.error)
+    api.getSets(lang).then(setSets).catch(console.error)
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -25,7 +25,7 @@ export default function ImportPage() {
     setError('')
     setResult(null)
     try {
-      const res = await api.importFile(file, setId ? Number(setId) : undefined)
+      const res = await api.importFile(lang, file, setId ? Number(setId) : undefined)
       setResult(res)
       setFile(null)
     } catch (err: any) {

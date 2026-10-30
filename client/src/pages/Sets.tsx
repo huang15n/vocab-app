@@ -6,7 +6,7 @@ import { useLang } from '../context/LanguageContext'
 import type { StudySet } from '../types'
 
 export default function Sets() {
-  const { t } = useLang()
+  const { t, lang } = useLang()
   const [sets, setSets] = useState<StudySet[]>([])
   const [loading, setLoading] = useState(true)
   const [showNew, setShowNew] = useState(false)
@@ -24,12 +24,12 @@ export default function Sets() {
 
   useEffect(() => {
     load()
-  }, [])
+  }, [lang])
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!name.trim()) return
-    await api.createSet({ name, description })
+    await api.createSet({ name, description, lang })
     setName('')
     setDescription('')
     setShowNew(false)

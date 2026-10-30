@@ -18,7 +18,7 @@ export default function Flashcards() {
   useEffect(() => {
     if (!setId) return
     api
-      .getCards(Number(setId), lang)
+      .getCards(Number(setId))
       .then((c) => {
         setCards([...c].sort(() => Math.random() - 0.5))
         setLoading(false)
@@ -30,7 +30,7 @@ export default function Flashcards() {
 
   const rate = async (quality: number) => {
     if (!card) return
-    await api.review(card.id, quality)
+    await api.review(card.id, quality, lang)
     if (quality >= 3) setStats((s) => ({ ...s, known: s.known + 1 }))
     else setStats((s) => ({ ...s, again: s.again + 1 }))
     setFlipped(false)

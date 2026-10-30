@@ -51,36 +51,33 @@ export const CONJUGATION_TENSES_LATER = [
   { key: 'subjonctif_passe', label: 'Subjonctif passé' },
 ] as const
 
+export const IELTS_LEVELS = ['4.0', '4.5', '5.0', '5.5', '6.0', '6.5', '7.0', '7.5', '8.0', '8.5', '9.0'] as const
+export const CEFR_LEVELS = ['A1', 'A2', 'A2–B1', 'B1', 'B2', 'C1', 'C2'] as const
+
+/** Entry in one language table (fr OR en OR es) */
 export interface Word {
   id: number
   userId?: number
-  /** @deprecated use fr */
-  word?: string
-  fr: string
-  en: string
-  es: string
+  lang?: Lang
+  word: string
   ipa: string
+  category: Category
   gender?: Gender
-  exampleFr?: string
-  exampleEn?: string
-  exampleEs?: string
-  /** legacy */
-  translations?: {
-    en?: string
-    enExample?: string
-    es?: string
-    esExample?: string
-    fr?: string
-  }
+  level?: string
+  levelSystem?: 'cefr' | 'ielts'
+  learningStatus: LearningStatus
   definition?: string
   examples: string[]
   collocations: string[]
   synonyms: string[]
   antonyms: string[]
   tags: string[]
-  cefrLevel: string
-  learningStatus: LearningStatus
-  category: Category
+  glossFr?: string
+  glossEn?: string
+  glossEs?: string
+  exampleFr?: string
+  exampleEn?: string
+  exampleEs?: string
   conjugations: Conjugations | null
   notes?: string
   createdAt: string
@@ -88,23 +85,24 @@ export interface Word {
 }
 
 export interface WordFormData {
-  fr: string
-  en: string
-  es: string
+  word: string
   ipa: string
   category: Category
   gender?: Gender
-  exampleFr?: string
-  exampleEn?: string
-  exampleEs?: string
+  level?: string
+  learningStatus: LearningStatus
   definition?: string
   examples: string[]
   collocations: string[]
   synonyms: string[]
   antonyms: string[]
   tags: string[]
-  cefrLevel: string
-  learningStatus: LearningStatus
+  glossFr?: string
+  glossEn?: string
+  glossEs?: string
+  exampleFr?: string
+  exampleEn?: string
+  exampleEs?: string
   conjugations: Conjugations | null
   notes?: string
 }
@@ -118,6 +116,7 @@ export interface User {
 export interface StudySet {
   id: number
   userId: number
+  lang: Lang
   name: string
   description: string
   wordIds: number[]
@@ -129,6 +128,7 @@ export interface StudySet {
 
 export interface Progress {
   userId: number
+  lang?: string
   wordId: number
   ease: number
   interval: number
@@ -148,6 +148,7 @@ export interface Stats {
   dueCount: number
   mastered: number
   totalReviews: number
+  byLang?: Record<string, number>
 }
 
 export interface Flashcard {
@@ -159,6 +160,7 @@ export interface Flashcard {
   category: string
   example: string
   progress: Progress
+  lang?: string
 }
 
 export interface QuizQuestion {
@@ -167,4 +169,5 @@ export interface QuizQuestion {
   ipa: string
   type: 'mcq' | 'write'
   options?: string[]
+  lang?: string
 }

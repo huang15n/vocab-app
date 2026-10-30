@@ -17,7 +17,7 @@ import type { Stats, StudySet, Category, LearningStatus } from '../types'
 
 export default function Dashboard() {
   const { user } = useAuth()
-  const { t } = useLang()
+  const { t, lang } = useLang()
   const [stats, setStats] = useState<Stats | null>(null)
   const [sets, setSets] = useState<StudySet[]>([])
   const [loading, setLoading] = useState(true)
@@ -41,7 +41,7 @@ export default function Dashboard() {
   }
 
   const load = () => {
-    Promise.all([api.getStats(), api.getSets()])
+    Promise.all([api.getStats(lang), api.getSets(lang)])
       .then(([s, se]) => {
         setStats(s)
         setSets(se)
@@ -52,13 +52,13 @@ export default function Dashboard() {
 
   useEffect(() => {
     load()
-  }, [])
+  }, [lang])
 
   const handleSeed = async (force = false) => {
     setSeeding(true)
     setMessage('')
     try {
-      const res = await api.seed(force)
+      const res = await api.seed(lang, force)
       setMessage(res.message)
       load()
     } catch (e: any) {

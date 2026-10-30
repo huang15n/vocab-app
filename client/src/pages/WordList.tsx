@@ -13,7 +13,7 @@ const statusColors: Record<LearningStatus, string> = {
 }
 
 export default function WordList() {
-  const { t, lang, primary, secondary } = useLang()
+  const { t, lang } = useLang()
   const [words, setWords] = useState<Word[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -28,7 +28,6 @@ export default function WordList() {
     appris: t('statusLearned'),
     a_reviser: t('statusReview'),
   }
-
   const categoryLabels: Record<Category, string> = {
     verbe: t('verb'),
     nom: t('noun'),
@@ -40,12 +39,12 @@ export default function WordList() {
 
   const load = () => {
     setLoading(true)
-    const params: Record<string, string> = { studyLang: lang }
+    const params: Record<string, string> = {}
     if (search) params.search = search
     if (category) params.category = category
     if (status) params.status = status
     api
-      .getWords(params)
+      .getWords(lang, params)
       .then(setWords)
       .catch(console.error)
       .finally(() => setLoading(false))
@@ -56,18 +55,9 @@ export default function WordList() {
     return () => clearTimeout(timer)
   }, [search, category, status, lang])
 
-  const toggle = (id: number) => {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  const toggleAll = () => {
-    if (selected.size === words.length) setSelected(new Set())
-    else setSelected(new Set(words.map((w) => w.id)))
+  const glossLine = (w: Word) => {
+    const parts = [w.glossFr, w.glossEn, w.glossEs].filter((g) => g && g !== w.word)
+    return parts.join(' · ')
   }
 
   const bulkDelete = async () => {
@@ -75,11 +65,9 @@ export default function WordList() {
     if (!confirm(`${t('confirmDelete')} ${selected.size} ${t('confirmBulk')}`)) return
     setDeleting(true)
     try {
-      await api.bulkDelete([...selected])
+      await api.bulkDelete(lang, [...selected])
       setSelected(new Set())
       load()
-    } catch (e) {
-      console.error(e)
     } finally {
       setDeleting(false)
     }
@@ -89,9 +77,9 @@ export default function WordList() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">{t('words')}</h1>
-          <p className="text-xs text-violet-600 mt-0.5 uppercase font-medium">
-            {lang === 'fr' ? 'Français' : lang === 'en' ? 'English' : 'Español'}
+          <h1 className="text-2xl font-bold">{t('words')}</h1>
+          <p className="text-xs text-violet-600 uppercase font-semibold mt-0.5">
+            {lang === 'fr' ? 'Français' : lang === 'en' ? 'English' : 'Español'} · table {lang}
           </p>
         </div>
         <div className="flex gap-2">
@@ -111,9 +99,8 @@ export default function WordList() {
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
-            type="text"
-            placeholder={t('search')}
             className="input pl-9"
+            placeholder={t('search')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -146,57 +133,53 @@ export default function WordList() {
             <input
               type="checkbox"
               checked={selected.size === words.length && words.length > 0}
-              onChange={toggleAll}
-              className="rounded border-slate-300"
+              onChange={() =>
+                setSelected(selected.size === words.length ? new Set() : new Set(words.map((w) => w.id)))
+              }
             />
             <span>{t('selectAll')}</span>
           </div>
-          <div className="grid gap-2">
-            {words.map((w) => {
-              const main = primary(w)
-              const secs = secondary(w)
-              return (
-                <div
-                  key={w.id}
-                  className={`card p-4 flex items-start gap-3 hover:border-primary-300 transition-all ${
-                    selected.has(w.id) ? 'border-primary-400 bg-primary-50/30' : ''
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selected.has(w.id)}
-                    onChange={() => toggle(w.id)}
-                    className="mt-1.5 rounded border-slate-300"
-                  />
-                  <Link to={`/words/${w.id}`} className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-semibold text-lg text-slate-900">{main || '—'}</span>
-                        {w.ipa && <span className="text-slate-400 text-sm font-mono">{w.ipa}</span>}
-                        <span className="badge bg-slate-100 text-slate-600">
-                          {categoryLabels[w.category]}
-                          {w.category === 'nom' && w.gender
-                            ? ` · ${w.gender === 'feminin' ? 'f.' : w.gender === 'masculin' ? 'm.' : 'inv.'}`
-                            : ''}
-                        </span>
-                      </div>
-                      <p className="text-slate-600 mt-1 truncate">
-                        {secs.map((s) => s.text).filter(Boolean).join(' · ')}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      {w.cefrLevel && (
-                        <span className="text-xs font-medium text-slate-500">{w.cefrLevel}</span>
-                      )}
-                      <span className={`badge ${statusColors[w.learningStatus]}`}>
-                        {statusLabels[w.learningStatus]}
-                      </span>
-                    </div>
-                  </Link>
+          {words.map((w) => (
+            <div
+              key={w.id}
+              className={`card p-4 flex items-start gap-3 ${selected.has(w.id) ? 'border-primary-400 bg-primary-50/30' : ''}`}
+            >
+              <input
+                type="checkbox"
+                className="mt-1.5"
+                checked={selected.has(w.id)}
+                onChange={() => {
+                  const n = new Set(selected)
+                  if (n.has(w.id)) n.delete(w.id)
+                  else n.add(w.id)
+                  setSelected(n)
+                }}
+              />
+              <Link to={`/words/${w.id}`} className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-semibold text-lg">{w.word}</span>
+                    {w.ipa && <span className="text-slate-400 text-sm font-mono">{w.ipa}</span>}
+                    <span className="badge bg-slate-100 text-slate-600">
+                      {categoryLabels[w.category]}
+                      {w.gender ? ` · ${w.gender === 'feminin' ? 'f.' : w.gender === 'masculin' ? 'm.' : 'inv.'}` : ''}
+                    </span>
+                  </div>
+                  <p className="text-slate-600 mt-1 truncate">{glossLine(w)}</p>
                 </div>
-              )
-            })}
-          </div>
+                <div className="flex items-center gap-3 shrink-0">
+                  {w.level && (
+                    <span className="text-xs text-slate-500">
+                      {w.levelSystem === 'ielts' ? `IELTS ${w.level}` : w.level}
+                    </span>
+                  )}
+                  <span className={`badge ${statusColors[w.learningStatus]}`}>
+                    {statusLabels[w.learningStatus]}
+                  </span>
+                </div>
+              </Link>
+            </div>
+          ))}
         </div>
       )}
     </div>

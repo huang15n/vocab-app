@@ -1,81 +1,74 @@
-import { request } from './client';
-import type { Word, WordFormData, Stats, StudySet, Flashcard, QuizQuestion, Progress, User } from '../types';
+import { request } from './client'
+import type { Word, WordFormData, Stats, StudySet, Flashcard, QuizQuestion, Progress, User } from '../types'
 
 export const api = {
-  // Auth
   register: (data: { email: string; password: string; name?: string }) =>
     request<{ token: string; user: User }>('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   login: (data: { email: string; password: string }) =>
     request<{ token: string; user: User }>('/auth/login', { method: 'POST', body: JSON.stringify(data) }),
   me: () => request<{ user: User }>('/auth/me'),
 
-  // Words
-  getWords: (params?: Record<string, string>) => {
-    const qs = params ? '?' + new URLSearchParams(params).toString() : '';
-    return request<Word[]>(`/words${qs}`);
+  getWords: (lang: string, params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : ''
+    return request<Word[]>(`/${lang}/words${qs}`)
   },
-  getWord: (id: number) => request<Word>(`/words/${id}`),
-  createWord: (data: WordFormData) =>
-    request<Word>('/words', { method: 'POST', body: JSON.stringify(data) }),
-  updateWord: (id: number, data: Partial<WordFormData>) =>
-    request<Word>(`/words/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deleteWord: (id: number) =>
-    request<{ message: string }>(`/words/${id}`, { method: 'DELETE' }),
-  bulkDelete: (ids: number[]) =>
-    request<{ message: string; deleted: number }>('/words/bulk-delete', {
+  getWord: (lang: string, id: number) => request<Word>(`/${lang}/words/${id}`),
+  createWord: (lang: string, data: WordFormData) =>
+    request<Word>(`/${lang}/words`, { method: 'POST', body: JSON.stringify(data) }),
+  updateWord: (lang: string, id: number, data: Partial<WordFormData>) =>
+    request<Word>(`/${lang}/words/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteWord: (lang: string, id: number) =>
+    request<{ message: string }>(`/${lang}/words/${id}`, { method: 'DELETE' }),
+  bulkDelete: (lang: string, ids: number[]) =>
+    request<{ message: string; deleted: number }>(`/${lang}/words/bulk-delete`, {
       method: 'POST',
       body: JSON.stringify({ ids }),
     }),
 
-  // Import
-  importFile: (file: File, setId?: number) => {
-    const fd = new FormData();
-    fd.append('file', file);
-    if (setId) fd.append('setId', String(setId));
-    return request<{ message: string; created: number; skipped: number }>('/import', {
+  importFile: (lang: string, file: File, setId?: number) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    if (setId) fd.append('setId', String(setId))
+    return request<{ message: string; created: number; skipped: number }>(`/${lang}/import`, {
       method: 'POST',
       body: fd,
-    });
+    })
   },
 
-  // Sets
-  getSets: () => request<StudySet[]>('/sets'),
+  getSets: (lang?: string) => {
+    const qs = lang ? `?lang=${lang}` : ''
+    return request<StudySet[]>(`/sets${qs}`)
+  },
   getSet: (id: number) => request<StudySet>(`/sets/${id}`),
-  createSet: (data: { name: string; description?: string; wordIds?: number[] }) =>
+  createSet: (data: { name: string; description?: string; wordIds?: number[]; lang: string }) =>
     request<StudySet>('/sets', { method: 'POST', body: JSON.stringify(data) }),
   updateSet: (id: number, data: Partial<StudySet>) =>
     request<StudySet>(`/sets/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deleteSet: (id: number) =>
-    request<{ message: string }>(`/sets/${id}`, { method: 'DELETE' }),
-  addWordsToSet: (id: number, wordIds: number[]) =>
-    request<StudySet>(`/sets/${id}/words`, { method: 'POST', body: JSON.stringify({ wordIds }) }),
+  deleteSet: (id: number) => request<{ message: string }>(`/sets/${id}`, { method: 'DELETE' }),
 
-  // Study
-  getCards: (setId: number, studyLang?: string) =>
-    request<Flashcard[]>(`/study/${setId}/cards${studyLang ? `?studyLang=${studyLang}` : ''}`),
-  getQuiz: (setId: number, limit = 15, studyLang?: string) =>
-    request<{ questions: QuizQuestion[]; setName: string; studyLang?: string; answerLang?: string }>(
-      `/study/${setId}/quiz?limit=${limit}${studyLang ? `&studyLang=${studyLang}` : ''}`
+  getCards: (setId: number) => request<Flashcard[]>(`/study/${setId}/cards`),
+  getQuiz: (setId: number, limit = 15) =>
+    request<{ questions: QuizQuestion[]; setName: string; lang?: string }>(
+      `/study/${setId}/quiz?limit=${limit}`
     ),
-  checkAnswer: (wordId: number, answer: string, type: 'mcq' | 'write') =>
+  checkAnswer: (wordId: number, answer: string, type: 'mcq' | 'write', lang: string) =>
     request<{ correct: boolean; correctAnswer: string; word: string; progress: Progress }>(
       '/study/quiz/check',
-      { method: 'POST', body: JSON.stringify({ wordId, answer, type }) }
+      { method: 'POST', body: JSON.stringify({ wordId, answer, type, lang }) }
     ),
-  review: (wordId: number, quality: number) =>
+  review: (wordId: number, quality: number, lang: string) =>
     request<{ progress: Progress; word: Word }>('/progress/review', {
       method: 'POST',
-      body: JSON.stringify({ wordId, quality }),
+      body: JSON.stringify({ wordId, quality, lang }),
     }),
-  getDue: (setId?: number) => {
-    const qs = setId ? `?setId=${setId}` : '';
-    return request<{ word: Word; progress: Progress }[]>(`/progress/due${qs}`);
-  },
 
-  // Stats & seed
-  getStats: () => request<Stats>('/stats'),
-  seed: (force = false) =>
-    request<{ message: string; count: number; setId: number }>(`/seed${force ? '?force=true' : ''}`, {
-      method: 'POST',
-    }),
-};
+  getStats: (lang?: string) => {
+    const qs = lang ? `?lang=${lang}` : ''
+    return request<Stats & { byLang?: Record<string, number> }>(`/stats${qs}`)
+  },
+  seed: (lang: string, force = false) =>
+    request<{ message: string; count: number; setId: number }>(
+      `/seed?lang=${lang}${force ? '&force=true' : ''}`,
+      { method: 'POST', body: JSON.stringify({ lang }) }
+    ),
+}

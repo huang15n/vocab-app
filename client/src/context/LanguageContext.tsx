@@ -6,9 +6,7 @@ interface LangCtx {
   lang: Lang
   setLang: (l: Lang) => void
   t: (key: TranslationKey) => string
-  /** Mot principal selon la langue active */
   primary: (w: Word) => string
-  /** Les deux autres langues */
   secondary: (w: Word) => { lang: Lang; text: string }[]
   primaryExample: (w: Word) => string
 }
@@ -19,32 +17,18 @@ function getStored(): Lang {
   try {
     const v = localStorage.getItem('vocab_lang') as Lang | null
     if (v === 'fr' || v === 'en' || v === 'es') return v
-    // migrate old keys
-    const old = localStorage.getItem('vocab_ui_lang') as Lang | null
-    if (old === 'fr' || old === 'en' || old === 'es') return old
   } catch {}
   return 'fr'
 }
 
-export function wordText(w: Word, lang: Lang): string {
-  if (lang === 'fr') return w.fr || w.word || ''
-  if (lang === 'en') return w.en || w.translations?.en || ''
-  if (lang === 'es') return w.es || w.translations?.es || ''
-  return ''
+export function wordText(w: Word, _lang: Lang): string {
+  return w.word || ''
 }
 
 export function wordExample(w: Word, lang: Lang): string {
-  if (lang === 'fr') {
-    if (w.exampleFr) return w.exampleFr
-    const ex = w.examples
-    if (Array.isArray(ex) && ex.length) {
-      const first = ex[0]
-      return typeof first === 'string' ? first : (first as any)?.sentence || ''
-    }
-    return ''
-  }
-  if (lang === 'en') return w.exampleEn || w.translations?.enExample || ''
-  if (lang === 'es') return w.exampleEs || w.translations?.esExample || ''
+  if (lang === 'fr') return w.exampleFr || (typeof w.examples?.[0] === 'string' ? w.examples[0] : '') || ''
+  if (lang === 'en') return w.exampleEn || (typeof w.examples?.[0] === 'string' ? w.examples[0] : '') || ''
+  if (lang === 'es') return w.exampleEs || (typeof w.examples?.[0] === 'string' ? w.examples[0] : '') || ''
   return ''
 }
 
@@ -62,16 +46,14 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   }, [lang])
 
   const t = (key: TranslationKey) => translate(lang, key)
-
-  const primary = (w: Word) => wordText(w, lang)
-
+  const primary = (w: Word) => w.word || ''
   const secondary = (w: Word) => {
-    const others: Lang[] = (['fr', 'en', 'es'] as Lang[]).filter((l) => l !== lang)
-    return others
-      .map((l) => ({ lang: l, text: wordText(w, l) }))
-      .filter((x) => x.text)
+    const out: { lang: Lang; text: string }[] = []
+    if (w.glossFr) out.push({ lang: 'fr', text: w.glossFr })
+    if (w.glossEn) out.push({ lang: 'en', text: w.glossEn })
+    if (w.glossEs) out.push({ lang: 'es', text: w.glossEs })
+    return out.filter((x) => x.text !== w.word)
   }
-
   const primaryExample = (w: Word) => wordExample(w, lang)
 
   return (
