@@ -95,4 +95,61 @@ export const api = {
       `/seed?lang=${lang}${force ? '&force=true' : ''}`,
       { method: 'POST', body: JSON.stringify({ lang }) }
     ),
+
+  // ---- Visual dictionary ----
+
+  getThemes: () => request<any[]>('/themes'),
+  getTheme: (id: number) => request<any>(`/themes/${id}`),
+  createTheme: (data: any) => request<any>('/themes', { method: 'POST', body: JSON.stringify(data) }),
+  updateTheme: (id: number, data: any) =>
+    request<any>(`/themes/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteTheme: (id: number) => request<{ message: string }>(`/themes/${id}`, { method: 'DELETE' }),
+
+  getVisual: (lang: string, params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : ''
+    return request<any[]>(`/${lang}/visual${qs}`)
+  },
+  getVisualWord: (lang: string, id: number) => request<any>(`/${lang}/visual/${id}`),
+  createVisual: (lang: string, formData: FormData) =>
+    request<any>(`/${lang}/visual`, { method: 'POST', body: formData }),
+  updateVisual: (lang: string, id: number, formData: FormData) =>
+    request<any>(`/${lang}/visual/${id}`, { method: 'PUT', body: formData }),
+  deleteVisual: (lang: string, id: number) =>
+    request<{ message: string }>(`/${lang}/visual/${id}`, { method: 'DELETE' }),
+  bulkDeleteVisual: (lang: string, ids: number[]) =>
+    request<{ deleted: number }>(`/${lang}/visual/bulk-delete`, {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
+  importVisual: (lang: string, themeId: number, file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    fd.append('themeId', String(themeId))
+    return request<{ message: string; created: number; duplicates?: string[] }>(
+      `/${lang}/visual-import`,
+      { method: 'POST', body: fd }
+    )
+  },
+  exportVisual: async (lang: string, themeId: number, format: 'csv' | 'xlsx' = 'csv') => {
+    const { getToken } = await import('./client')
+    const token = getToken()
+    const res = await fetch(`/api/${lang}/visual-export?themeId=${themeId}&format=${format}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }))
+      throw new Error(err.error || 'Export failed')
+    }
+    const blob = await res.blob()
+    const dispo = res.headers.get('Content-Disposition') || ''
+    const match = dispo.match(/filename="?([^";]+)"?/)
+    const filename = match?.[1] || `visual-${lang}.${format}`
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+    return { filename }
+  },
 }

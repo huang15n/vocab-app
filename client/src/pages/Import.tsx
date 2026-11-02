@@ -20,13 +20,13 @@ const IMPORT_SPECS: Record<
     label: { fr: 'Français (wordsFr)', en: 'French (wordsFr)', es: 'Francés (wordsFr)' },
     table: 'wordsFr',
     columns:
-      'word,en,es,ipa,category,gender,level,definition,examples,collocations,synonyms,antonyms,tags,notes',
+      'word,en,es,ipa,category,gender,level,definition,examples,example_en,example_es,collocations,synonyms,antonyms,tags,notes',
     notes: {
-      fr: 'word = mot FR (obligatoire). category: verbe|nom|adjectif|expression|adverbe|autre. gender (noms): masculin|feminin|invariable. level = CECR (A1, A2, B1…). Listes séparées par ; ou ,',
-      en: 'word = French headword (required). category: verbe|nom|adjectif|…. gender (nouns): masculin|feminin|invariable. level = CEFR. Lists separated by ; or ,',
-      es: 'word = palabra FR (obligatoria). category: verbe|nom|…. gender: masculin|feminin|invariable. level = MCER. Listas separadas por ; o ,',
+      fr: 'word = mot FR (obligatoire). definition = définition EN FRANÇAIS. examples = exemples FR. example_en / example_es = exemples EN et ES (recommandés). category: verbe|nom|adjectif|expression|adverbe|autre. gender (noms): masculin|feminin|invariable. level = CECR. Listes séparées par ;',
+      en: 'word = French headword (required). definition in French. examples = FR sentences. example_en / example_es = EN and ES example sentences. CEFR level. Lists separated by ;',
+      es: 'word = palabra FR (obligatoria). definition en francés. examples = ejemplos FR. example_en / example_es = ejemplos EN y ES. Nivel MCER. Listas separadas por ;',
     },
-    example: `word,en,es,ipa,category,gender,level,definition,examples,collocations,synonyms,antonyms,tags,notes
+    example: `word,en,es,ipa,category,gender,level,definition,examples,example_en,example_es,collocations,synonyms,antonyms,tags,notes
 poser,to ask; to put,hacer una pregunta; poner,/po.ze/,verbe,,A2–B1,Mettre ou formuler une question,Je voudrais poser une question.,poser une question;poser un problème,interroger;questionner,,communication;travail,1er groupe
 maison,house; home,casa,/mɛ.zɔ̃/,nom,feminin,A1,Bâtiment d'habitation,J'habite dans une grande maison.,maison de campagne;à la maison,habitation;demeure,,quotidien;logement,
 beau,beautiful; handsome,hermoso; bello,/bo/,adjectif,,A1,Qui suscite l'admiration,C'est un beau paysage.,beau temps;il fait beau,joli;magnifique,laid,description,beau/belle/beaux/belles

@@ -27,9 +27,16 @@ function emptyDb() {
     wordsEs: [],
     sets: [],
     progress: [],
+    themes: [],
+    visualWordsFr: [],
+    visualWordsEn: [],
+    visualWordsEs: [],
     nextUserId: 1,
     nextWordId: { fr: 1, en: 1, es: 1 },
     nextSetId: 1,
+    nextThemeId: 1,
+    nextVisualId: { fr: 1, en: 1, es: 1 },
+    nextSubId: 1,
   };
 }
 
@@ -60,7 +67,14 @@ function loadDb() {
         wordsFr: raw.wordsFr || [],
         wordsEn: raw.wordsEn || [],
         wordsEs: raw.wordsEs || [],
+        themes: raw.themes || [],
+        visualWordsFr: raw.visualWordsFr || [],
+        visualWordsEn: raw.visualWordsEn || [],
+        visualWordsEs: raw.visualWordsEs || [],
         nextWordId: raw.nextWordId || { fr: 1, en: 1, es: 1 },
+        nextThemeId: raw.nextThemeId || 1,
+        nextVisualId: raw.nextVisualId || { fr: 1, en: 1, es: 1 },
+        nextSubId: raw.nextSubId || 1,
       };
     }
   } catch (e) {
@@ -90,12 +104,25 @@ function setWords(lang, arr) {
 }
 
 /** Build canonical entry per language table */
+function fixCategory(cat) {
+  const map = {
+    verbe: 'verbe', verb: 'verbe', verbee: 'verbe',
+    nom: 'nom', noun: 'nom',
+    adjectif: 'adjectif', adjective: 'adjectif',
+    expression: 'expression',
+    adverbe: 'adverbe', adverb: 'adverbe',
+    autre: 'autre', other: 'autre',
+  };
+  const c = String(cat || 'nom').toLowerCase().trim();
+  return map[c] || 'nom';
+}
+
 function normalizeToLang(body, lang) {
   const base = {
     userId: body.userId,
     word: (body.word || body.fr || body.en || body.es || '').trim(),
     ipa: (body.ipa || '').trim(),
-    category: body.category || 'nom',
+    category: fixCategory(body.category),
     definition: body.definition || '',
     examples: Array.isArray(body.examples)
       ? body.examples.map((e) => (typeof e === 'string' ? e : e?.sentence || '')).filter(Boolean)
@@ -150,6 +177,71 @@ function normalizeToLang(body, lang) {
 app.use(cors());
 app.use(morgan('dev'));
 app.use(express.json({ limit: '5mb' }));
+
+const UPLOADS = path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(UPLOADS)) fs.mkdirSync(UPLOADS, { recursive: true });
+app.use('/uploads', express.static(UPLOADS));
+
+const imageUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, UPLOADS),
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
+      cb(null, `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (/^image\/(jpeg|png|gif|webp)$/i.test(file.mimetype)) cb(null, true);
+    else cb(new Error('Image JPEG/PNG/WebP uniquement'));
+  },
+});
+
+function visualKey(lang) {
+  if (lang === 'en') return 'visualWordsEn';
+  if (lang === 'es') return 'visualWordsEs';
+  return 'visualWordsFr';
+}
+function getVisual(lang) {
+  return db[visualKey(lang)] || [];
+}
+function setVisual(lang, arr) {
+  db[visualKey(lang)] = arr;
+}
+
+function normalizeVisual(body, lang) {
+  const base = {
+    userId: body.userId,
+    themeId: Number(body.themeId) || null,
+    subcategoryId: body.subcategoryId != null && body.subcategoryId !== '' ? Number(body.subcategoryId) : null,
+    word: (body.word || '').trim(),
+    ipa: (body.ipa || '').trim(),
+    ipaEn: (body.ipaEn || '').trim(),
+    ipaEs: (body.ipaEs || '').trim(),
+    category: fixCategory(body.category),
+    gender: body.category === 'nom' || body.gender ? body.gender || '' : '',
+    definition: (body.definition || '').trim(),
+    examples: Array.isArray(body.examples)
+      ? body.examples.map((e) => (typeof e === 'string' ? e : '')).filter(Boolean)
+      : typeof body.examples === 'string' && body.examples
+        ? body.examples.split(/[;|]/).map((s) => s.trim()).filter(Boolean)
+        : [],
+    glossFr: (body.glossFr || body.fr || '').trim(),
+    glossEn: (body.glossEn || body.en || '').trim(),
+    glossEs: (body.glossEs || body.es || '').trim(),
+    exampleFr: body.exampleFr || '',
+    exampleEn: body.exampleEn || '',
+    exampleEs: body.exampleEs || '',
+    notes: body.notes || '',
+    imageUrl: body.imageUrl || '',
+    tags: body.tags || [],
+  };
+  if (lang === 'fr') base.word = (body.word || body.fr || '').trim();
+  if (lang === 'en') base.word = (body.word || body.en || '').trim();
+  if (lang === 'es') base.word = (body.word || body.es || '').trim();
+  return base;
+}
+
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -235,7 +327,10 @@ app.get('/api/auth/me', auth, (req, res) => res.json({ user: req.user }));
 // ---------- Words per language ----------
 app.get('/api/:lang/words', auth, (req, res) => {
   const lang = parseLang(req);
-  let words = getWords(lang).filter((w) => w.userId === req.user.id);
+  let words = getWords(lang).filter((w) => w.userId === req.user.id).map((w) => ({
+    ...w,
+    category: fixCategory(w.category),
+  }));
   const { category, status, tag, search, level } = req.query;
 
   if (category) words = words.filter((w) => w.category === category);
@@ -400,31 +495,58 @@ app.post('/api/:lang/import', auth, upload.single('file'), (req, res) => {
           ? get(row, 'word', 'es', 'spanish', 'español')
           : get(row, 'word', 'fr', 'mot', 'french');
     if (!word) continue;
-    const cat = (get(row, 'category', 'type') || 'nom').toLowerCase();
+    const catRaw = (get(row, 'category', 'categorie', 'type', 'part_of_speech') || 'nom').toLowerCase().trim();
+    const catMap = {
+      verbe: 'verbe', verb: 'verbe', verbee: 'verbe',
+      nom: 'nom', noun: 'nom',
+      adjectif: 'adjectif', adjective: 'adjectif',
+      expression: 'expression',
+      adverbe: 'adverbe', adverb: 'adverbe',
+      autre: 'autre', other: 'autre',
+    };
+    const category = catMap[catRaw] || 'nom';
+    const splitList = (val) =>
+      val
+        ? val.split(/[;|]/).map((s) => s.trim()).filter(Boolean)
+        : [];
+    // tags/synonyms also allow commas when no semicolon
+    const splitTags = (val) => {
+      if (!val) return [];
+      if (val.includes(';') || val.includes('|')) return splitList(val);
+      return val.split(',').map((s) => s.trim()).filter(Boolean);
+    };
     const body = {
       userId: req.user.id,
       word,
       ipa: get(row, 'ipa'),
-      category: ['verbe', 'nom', 'adjectif', 'expression', 'adverbe', 'autre', 'verb', 'noun', 'adjective'].includes(cat)
-        ? cat.replace('verb', 'verbe').replace('noun', 'nom').replace('adjective', 'adjectif')
-        : 'nom',
-      gender: get(row, 'gender', 'genre'),
-      level: get(row, 'level', 'cefr', 'ielts'),
-      glossFr: get(row, 'fr', 'gloss_fr', 'french'),
-      glossEn: get(row, 'en', 'gloss_en', 'english'),
-      glossEs: get(row, 'es', 'gloss_es', 'spanish'),
-      exampleFr: get(row, 'example_fr', 'exemple_fr'),
-      exampleEn: get(row, 'example_en', 'exemple_en'),
-      exampleEs: get(row, 'example_es', 'exemple_es'),
-      examples: get(row, 'examples', 'exemple', 'example')
-        ? get(row, 'examples', 'exemple', 'example').split(/[;|]/).map((s) => s.trim()).filter(Boolean)
-        : [],
-      tags: get(row, 'tags') ? get(row, 'tags').split(/[,;]/).map((s) => s.trim()).filter(Boolean) : [],
-      synonyms: get(row, 'synonyms', 'synonymes')
-        ? get(row, 'synonyms', 'synonymes').split(/[,;]/).map((s) => s.trim()).filter(Boolean)
-        : [],
-      notes: get(row, 'notes'),
+      category,
+      gender: get(row, 'gender', 'genre', 'genero'),
+      level: get(row, 'level', 'cefr', 'ielts', 'niveau', 'niveau_cecr', 'nivel_mcer'),
+      definition: get(row, 'definition', 'définition', 'def', 'definicion'),
+      glossFr: get(row, 'fr', 'gloss_fr', 'french', 'francais', 'français', 'mot'),
+      glossEn: get(row, 'en', 'gloss_en', 'english', 'anglais'),
+      glossEs: get(row, 'es', 'gloss_es', 'spanish', 'espagnol', 'español'),
+      exampleFr: get(row, 'example_fr', 'exemple_fr', 'examplefr'),
+      exampleEn: get(row, 'example_en', 'exemple_en', 'exampleen'),
+      exampleEs: get(row, 'example_es', 'exemple_es', 'examplees'),
+      examples: splitList(get(row, 'examples', 'exemple', 'example', 'exemples', 'ejemplos')),
+      collocations: splitList(get(row, 'collocations', 'collocation', 'colocaciones')),
+      synonyms: splitTags(get(row, 'synonyms', 'synonymes', 'sinonimos', 'sinónimos')),
+      antonyms: splitTags(get(row, 'antonyms', 'antonymes', 'antonimos', 'antónimos')),
+      tags: splitTags(get(row, 'tags', 'etiquettes', 'étiquettes', 'etiquetas')),
+      notes: get(row, 'notes', 'note', 'notas'),
+      learningStatus: get(row, 'statut', 'status', 'learning_status', 'estado') || 'nouveau',
     };
+    // For FR import, word column is French — don't overwrite glossFr with mot if same
+    if (lang === 'fr') {
+      body.glossFr = get(row, 'fr', 'gloss_fr') || '';
+    }
+    if (lang === 'en') {
+      body.glossEn = get(row, 'en', 'gloss_en') || '';
+    }
+    if (lang === 'es') {
+      body.glossEs = get(row, 'es', 'gloss_es') || '';
+    }
     const entry = normalizeToLang(body, lang);
     entry.id = db.nextWordId[lang]++;
     entry.userId = req.user.id;
@@ -986,6 +1108,468 @@ app.get('/api/:lang/export', auth, (req, res) => {
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="${base}.csv"`);
   res.send(bom + csv);
+});
+
+
+
+// ---------- Visual dictionary: Themes ----------
+app.get('/api/themes', auth, (req, res) => {
+  const themes = db.themes
+    .filter((t) => t.userId === req.user.id)
+    .map((t) => {
+      const counts = { fr: 0, en: 0, es: 0 };
+      for (const l of LANGS) {
+        counts[l] = getVisual(l).filter(
+          (w) => w.userId === req.user.id && w.themeId === t.id
+        ).length;
+      }
+      return { ...t, wordCounts: counts };
+    })
+    .sort((a, b) => (a.order || 0) - (b.order || 0) || a.id - b.id);
+  res.json(themes);
+});
+
+app.post('/api/themes', auth, (req, res) => {
+  const { nameFr, nameEn, nameEs, icon, subcategories } = req.body;
+  if (!(nameFr || nameEn || nameEs)?.toString().trim()) {
+    return res.status(400).json({ error: 'Nom du thème requis' });
+  }
+  const subs = Array.isArray(subcategories)
+    ? subcategories.map((s, i) => ({
+        id: db.nextSubId++,
+        nameFr: (s.nameFr || s.name || '').trim(),
+        nameEn: (s.nameEn || '').trim(),
+        nameEs: (s.nameEs || '').trim(),
+        order: i,
+      }))
+    : [];
+  const theme = {
+    id: db.nextThemeId++,
+    userId: req.user.id,
+    nameFr: (nameFr || '').trim(),
+    nameEn: (nameEn || '').trim(),
+    nameEs: (nameEs || '').trim(),
+    icon: icon || '📚',
+    order: db.themes.filter((t) => t.userId === req.user.id).length,
+    subcategories: subs,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  db.themes.push(theme);
+  saveDb();
+  res.status(201).json(theme);
+});
+
+app.get('/api/themes/:id', auth, (req, res) => {
+  const theme = db.themes.find((t) => t.id === Number(req.params.id) && t.userId === req.user.id);
+  if (!theme) return res.status(404).json({ error: 'Thème non trouvé' });
+  res.json(theme);
+});
+
+app.put('/api/themes/:id', auth, (req, res) => {
+  const idx = db.themes.findIndex((t) => t.id === Number(req.params.id) && t.userId === req.user.id);
+  if (idx === -1) return res.status(404).json({ error: 'Thème non trouvé' });
+  const prev = db.themes[idx];
+  let subs = prev.subcategories || [];
+  if (Array.isArray(req.body.subcategories)) {
+    subs = req.body.subcategories.map((s, i) => ({
+      id: s.id || db.nextSubId++,
+      nameFr: (s.nameFr || s.name || '').trim(),
+      nameEn: (s.nameEn || '').trim(),
+      nameEs: (s.nameEs || '').trim(),
+      order: i,
+    }));
+  }
+  db.themes[idx] = {
+    ...prev,
+    nameFr: req.body.nameFr !== undefined ? String(req.body.nameFr).trim() : prev.nameFr,
+    nameEn: req.body.nameEn !== undefined ? String(req.body.nameEn).trim() : prev.nameEn,
+    nameEs: req.body.nameEs !== undefined ? String(req.body.nameEs).trim() : prev.nameEs,
+    icon: req.body.icon !== undefined ? req.body.icon : prev.icon,
+    subcategories: subs,
+    updatedAt: new Date().toISOString(),
+  };
+  saveDb();
+  res.json(db.themes[idx]);
+});
+
+app.delete('/api/themes/:id', auth, (req, res) => {
+  const id = Number(req.params.id);
+  const idx = db.themes.findIndex((t) => t.id === id && t.userId === req.user.id);
+  if (idx === -1) return res.status(404).json({ error: 'Thème non trouvé' });
+  db.themes.splice(idx, 1);
+  for (const l of LANGS) {
+    setVisual(
+      l,
+      getVisual(l).filter((w) => !(w.userId === req.user.id && w.themeId === id))
+    );
+  }
+  saveDb();
+  res.json({ message: 'Thème supprimé' });
+});
+
+// ---------- Visual words ----------
+app.get('/api/:lang/visual', auth, (req, res) => {
+  const lang = parseLang(req);
+  let list = getVisual(lang).filter((w) => w.userId === req.user.id);
+  const { themeId, subcategoryId, search } = req.query;
+  if (themeId) list = list.filter((w) => w.themeId === Number(themeId));
+  if (subcategoryId === 'null' || subcategoryId === 'none') {
+    list = list.filter((w) => !w.subcategoryId);
+  } else if (subcategoryId) {
+    list = list.filter((w) => w.subcategoryId === Number(subcategoryId));
+  }
+  if (search) {
+    const q = search.toLowerCase();
+    list = list.filter(
+      (w) =>
+        (w.word || '').toLowerCase().includes(q) ||
+        (w.glossEn || '').toLowerCase().includes(q) ||
+        (w.glossFr || '').toLowerCase().includes(q) ||
+        (w.glossEs || '').toLowerCase().includes(q)
+    );
+  }
+  list.sort((a, b) => (a.word || '').localeCompare(b.word || '', lang));
+  res.json(list.map((w) => ({ ...w, lang })));
+});
+
+app.get('/api/:lang/visual/:id', auth, (req, res) => {
+  const lang = parseLang(req);
+  const w = getVisual(lang).find((x) => x.id === Number(req.params.id) && x.userId === req.user.id);
+  if (!w) return res.status(404).json({ error: 'Mot non trouvé' });
+  res.json({ ...w, lang });
+});
+
+app.post('/api/:lang/visual', auth, imageUpload.single('image'), (req, res) => {
+  const lang = parseLang(req);
+  let body = req.body;
+  // multipart fields are strings
+  if (typeof body.examples === 'string') {
+    try {
+      body.examples = JSON.parse(body.examples);
+    } catch {
+      body.examples = body.examples.split(/[;|]/).map((s) => s.trim()).filter(Boolean);
+    }
+  }
+  if (typeof body.tags === 'string') {
+    try {
+      body.tags = JSON.parse(body.tags);
+    } catch {
+      body.tags = body.tags.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+    }
+  }
+  body.userId = req.user.id;
+  if (req.file) body.imageUrl = `/uploads/${req.file.filename}`;
+  const entry = normalizeVisual(body, lang);
+  if (!entry.word) return res.status(400).json({ error: 'Mot requis' });
+  if (!entry.definition) return res.status(400).json({ error: 'Définition requise' });
+  if (!entry.themeId) return res.status(400).json({ error: 'Thème requis' });
+  const dup = getVisual(lang).find(
+    (w) =>
+      w.userId === req.user.id &&
+      w.themeId === entry.themeId &&
+      normalizeKey(w.word) === normalizeKey(entry.word)
+  );
+  if (dup) {
+    return res.status(409).json({
+      error: 'duplicate',
+      message: `Mot répété dans ce thème : « ${dup.word} »`,
+      existing: { id: dup.id, word: dup.word },
+    });
+  }
+  entry.id = db.nextVisualId[lang]++;
+  entry.userId = req.user.id;
+  entry.createdAt = new Date().toISOString();
+  entry.updatedAt = entry.createdAt;
+  getVisual(lang).push(entry);
+  saveDb();
+  res.status(201).json({ ...entry, lang });
+});
+
+app.put('/api/:lang/visual/:id', auth, imageUpload.single('image'), (req, res) => {
+  const lang = parseLang(req);
+  const list = getVisual(lang);
+  const idx = list.findIndex((w) => w.id === Number(req.params.id) && w.userId === req.user.id);
+  if (idx === -1) return res.status(404).json({ error: 'Mot non trouvé' });
+  let body = { ...list[idx], ...req.body };
+  if (typeof body.examples === 'string') {
+    try {
+      body.examples = JSON.parse(body.examples);
+    } catch {
+      body.examples = body.examples.split(/[;|]/).map((s) => s.trim()).filter(Boolean);
+    }
+  }
+  if (req.file) body.imageUrl = `/uploads/${req.file.filename}`;
+  body.userId = req.user.id;
+  const entry = normalizeVisual(body, lang);
+  entry.id = list[idx].id;
+  entry.userId = req.user.id;
+  entry.createdAt = list[idx].createdAt;
+  entry.updatedAt = new Date().toISOString();
+  if (!entry.imageUrl) entry.imageUrl = list[idx].imageUrl;
+  const dup = getVisual(lang).find(
+    (w) =>
+      w.userId === req.user.id &&
+      w.id !== entry.id &&
+      w.themeId === entry.themeId &&
+      normalizeKey(w.word) === normalizeKey(entry.word)
+  );
+  if (dup) {
+    return res.status(409).json({
+      error: 'duplicate',
+      message: `Mot répété dans ce thème : « ${dup.word} »`,
+      existing: { id: dup.id, word: dup.word },
+    });
+  }
+  list[idx] = entry;
+  saveDb();
+  res.json({ ...entry, lang });
+});
+
+app.delete('/api/:lang/visual/:id', auth, (req, res) => {
+  const lang = parseLang(req);
+  const list = getVisual(lang);
+  const idx = list.findIndex((w) => w.id === Number(req.params.id) && w.userId === req.user.id);
+  if (idx === -1) return res.status(404).json({ error: 'Mot non trouvé' });
+  list.splice(idx, 1);
+  saveDb();
+  res.json({ message: 'OK' });
+});
+
+app.post('/api/:lang/visual/bulk-delete', auth, (req, res) => {
+  const lang = parseLang(req);
+  const ids = new Set((req.body.ids || []).map(Number).filter(Boolean));
+  const before = getVisual(lang).length;
+  setVisual(
+    lang,
+    getVisual(lang).filter((w) => !(w.userId === req.user.id && ids.has(w.id)))
+  );
+  saveDb();
+  res.json({ deleted: before - getVisual(lang).length });
+});
+
+// Import visual words for a theme
+app.post('/api/:lang/visual-import', auth, upload.single('file'), (req, res) => {
+  const lang = parseLang(req);
+  const themeId = Number(req.body.themeId);
+  if (!themeId) return res.status(400).json({ error: 'themeId requis' });
+  const theme = db.themes.find((t) => t.id === themeId && t.userId === req.user.id);
+  if (!theme) return res.status(404).json({ error: 'Thème non trouvé' });
+  if (!req.file) return res.status(400).json({ error: 'Fichier requis' });
+
+  const ext = path.extname(req.file.originalname).toLowerCase();
+  let rows = [];
+  try {
+    if (ext === '.csv' || req.file.mimetype === 'text/csv') {
+      rows = parse(req.file.buffer.toString('utf8'), {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+        bom: true,
+        relax_column_count: true,
+      });
+    } else {
+      const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+      rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+    }
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+
+  const get = (row, ...keys) => {
+    for (const k of keys) {
+      const found = Object.keys(row).find((rk) => rk.toLowerCase().trim() === k.toLowerCase());
+      if (found && String(row[found]).trim()) return String(row[found]).trim();
+    }
+    return '';
+  };
+
+  const splitList = (val) =>
+    val ? val.split(/[;|]/).map((s) => s.trim()).filter(Boolean) : [];
+
+  const created = [];
+  const duplicates = [];
+  const seen = new Set();
+
+  for (const row of rows) {
+    const word =
+      lang === 'en'
+        ? get(row, 'word', 'en', 'english')
+        : lang === 'es'
+          ? get(row, 'word', 'es', 'spanish')
+          : get(row, 'word', 'fr', 'mot', 'french');
+    if (!word) continue;
+
+    const subName = get(row, 'subcategory', 'sous_categorie', 'sub', 'subcategory_fr', 'nameFr');
+    let subcategoryId = null;
+    if (subName) {
+      const key = subName.toLowerCase();
+      let sub = (theme.subcategories || []).find(
+        (s) =>
+          (s.nameFr || '').toLowerCase() === key ||
+          (s.nameEn || '').toLowerCase() === key ||
+          (s.nameEs || '').toLowerCase() === key
+      );
+      if (!sub) {
+        sub = {
+          id: db.nextSubId++,
+          nameFr: lang === 'fr' ? subName : get(row, 'subcategory_fr') || subName,
+          nameEn: lang === 'en' ? subName : get(row, 'subcategory_en') || '',
+          nameEs: lang === 'es' ? subName : get(row, 'subcategory_es') || '',
+          order: (theme.subcategories || []).length,
+        };
+        theme.subcategories = theme.subcategories || [];
+        theme.subcategories.push(sub);
+      }
+      subcategoryId = sub.id;
+    }
+
+    const body = {
+      userId: req.user.id,
+      themeId,
+      subcategoryId,
+      word,
+      ipa: get(row, 'ipa'),
+      ipaEn: get(row, 'ipa_en', 'ipaEn'),
+      ipaEs: get(row, 'ipa_es', 'ipaEs'),
+      category: get(row, 'category', 'categorie') || 'nom',
+      gender: get(row, 'gender', 'genre'),
+      definition: get(row, 'definition', 'définition', 'definicion'),
+      glossFr: get(row, 'fr', 'gloss_fr', 'french'),
+      glossEn: get(row, 'en', 'gloss_en', 'english'),
+      glossEs: get(row, 'es', 'gloss_es', 'spanish'),
+      exampleFr: get(row, 'example_fr', 'exemple_fr'),
+      exampleEn: get(row, 'example_en', 'exemple_en'),
+      exampleEs: get(row, 'example_es', 'exemple_es'),
+      examples: splitList(get(row, 'examples', 'exemple', 'exemples')),
+      notes: get(row, 'notes'),
+      imageUrl: get(row, 'image', 'image_url', 'photo', 'imageUrl'),
+      tags: splitList(get(row, 'tags')),
+    };
+    if (lang === 'fr') body.glossFr = '';
+    if (lang === 'en') body.glossEn = '';
+    if (lang === 'es') body.glossEs = '';
+
+    const entry = normalizeVisual(body, lang);
+    if (!entry.definition) entry.definition = entry.word; // soft fallback
+    if (seen.has(normalizeKey(entry.word)) ||
+        getVisual(lang).find(
+          (w) =>
+            w.userId === req.user.id &&
+            w.themeId === themeId &&
+            normalizeKey(w.word) === normalizeKey(entry.word)
+        )) {
+      duplicates.push(entry.word);
+      continue;
+    }
+    seen.add(normalizeKey(entry.word));
+    entry.id = db.nextVisualId[lang]++;
+    entry.userId = req.user.id;
+    entry.createdAt = new Date().toISOString();
+    entry.updatedAt = entry.createdAt;
+    getVisual(lang).push(entry);
+    created.push(entry);
+  }
+  theme.updatedAt = new Date().toISOString();
+  saveDb();
+  res.json({
+    message: `${created.length} importé(s)`,
+    created: created.length,
+    duplicates: [...new Set(duplicates)],
+    duplicateCount: duplicates.length,
+  });
+});
+
+// Export visual words for a theme
+app.get('/api/:lang/visual-export', auth, (req, res) => {
+  const lang = parseLang(req);
+  const themeId = Number(req.query.themeId);
+  if (!themeId) return res.status(400).json({ error: 'themeId requis' });
+  const theme = db.themes.find((t) => t.id === themeId && t.userId === req.user.id);
+  if (!theme) return res.status(404).json({ error: 'Thème non trouvé' });
+  const list = getVisual(lang).filter((w) => w.userId === req.user.id && w.themeId === themeId);
+  const subMap = {};
+  (theme.subcategories || []).forEach((s) => {
+    subMap[s.id] = s.nameFr || s.nameEn || s.nameEs || '';
+  });
+
+  const rows = list.map((w) => {
+    if (lang === 'en') {
+      return {
+        word: w.word,
+        subcategory: subMap[w.subcategoryId] || '',
+        fr: w.glossFr || '',
+        es: w.glossEs || '',
+        ipa: w.ipa || '',
+        category: w.category || '',
+        definition: w.definition || '',
+        examples: (w.examples || []).join(' ; '),
+        example_fr: w.exampleFr || '',
+        example_es: w.exampleEs || '',
+        notes: w.notes || '',
+        image: w.imageUrl || '',
+        tags: (w.tags || []).join(' ; '),
+      };
+    }
+    if (lang === 'es') {
+      return {
+        word: w.word,
+        subcategory: subMap[w.subcategoryId] || '',
+        fr: w.glossFr || '',
+        en: w.glossEn || '',
+        ipa: w.ipa || '',
+        category: w.category || '',
+        gender: w.gender || '',
+        definition: w.definition || '',
+        examples: (w.examples || []).join(' ; '),
+        example_fr: w.exampleFr || '',
+        example_en: w.exampleEn || '',
+        notes: w.notes || '',
+        image: w.imageUrl || '',
+        tags: (w.tags || []).join(' ; '),
+      };
+    }
+    return {
+      word: w.word,
+      subcategory: subMap[w.subcategoryId] || '',
+      en: w.glossEn || '',
+      es: w.glossEs || '',
+      ipa: w.ipa || '',
+      category: w.category || '',
+      gender: w.gender || '',
+      definition: w.definition || '',
+      examples: (w.examples || []).join(' ; '),
+      example_en: w.exampleEn || '',
+      example_es: w.exampleEs || '',
+      notes: w.notes || '',
+      image: w.imageUrl || '',
+      tags: (w.tags || []).join(' ; '),
+    };
+  });
+
+  const format = (req.query.format || 'csv').toLowerCase();
+  const stamp = new Date().toISOString().slice(0, 10);
+  const base = `visual-${lang}-theme${themeId}-${stamp}`;
+
+  if (format === 'xlsx' || format === 'excel') {
+    const ws = XLSX.utils.json_to_sheet(rows.length ? rows : [{}]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'visual');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${base}.xlsx"`);
+    return res.send(Buffer.from(buf));
+  }
+  const keys = rows.length ? Object.keys(rows[0]) : ['word'];
+  const esc = (v) => {
+    const s = String(v ?? '');
+    if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  };
+  const csv = [keys.join(',')].concat(rows.map((r) => keys.map((k) => esc(r[k])).join(','))).join('\n');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${base}.csv"`);
+  res.send('\uFEFF' + csv);
 });
 
 

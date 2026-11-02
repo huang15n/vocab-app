@@ -18,6 +18,9 @@ import Dashboard from './pages/Dashboard'
 import Login from './pages/Login'
 import Register from './pages/Register'
 import ImportPage from './pages/Import'
+import Themes from './pages/Themes'
+import ThemeDetail from './pages/ThemeDetail'
+import VisualWordDetail from './pages/VisualWordDetail'
 import Sets from './pages/Sets'
 import Flashcards from './pages/Flashcards'
 import Quiz from './pages/Quiz'
@@ -96,7 +99,17 @@ function AppLayout({ children }: { children: React.ReactNode }) {
                 <Layers className="w-4 h-4" />
                 <span className="hidden md:inline">{t('sets')}</span>
               </NavLink>
-              <NavLink
+                            <NavLink
+                to="/themes"
+                className={({ isActive }) =>
+                  `px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                    isActive ? 'bg-primary-100 text-primary-800' : 'text-slate-600 hover:bg-slate-100'
+                  }`
+                }
+              >
+                {t('themes')}
+              </NavLink>
+<NavLink
                 to="/import"
                 className={({ isActive }) =>
                   `btn-ghost text-xs sm:text-sm ${isActive ? 'bg-primary-50 text-primary-700' : ''}`
@@ -148,6 +161,9 @@ export default function App() {
                 <Route path="/words/:id/edit" element={<WordForm />} />
                 <Route path="/sets" element={<Sets />} />
                 <Route path="/import" element={<ImportPage />} />
+                <Route path="/themes" element={<Themes />} />
+                <Route path="/themes/:id" element={<ThemeDetail />} />
+                <Route path="/themes/:themeId/words/:wordId" element={<VisualWordDetail />} />
                 <Route path="/study/:setId/flashcards" element={<Flashcards />} />
                 <Route path="/study/:setId/quiz" element={<Quiz />} />
               </Routes>
